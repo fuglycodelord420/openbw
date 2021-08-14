@@ -125,7 +125,7 @@ public:
 	iterators_range(iter_T begin_it, iter_T end_it) : begin_it(begin_it), end_it(end_it) {}
 
 	using iterator = iter_T;
-	
+
 	using value_type = typename std::iterator_traits<iterator>::value_type;
 	using pointer = typename std::iterator_traits<iterator>::pointer;
 	using reference = typename std::iterator_traits<iterator>::reference;
@@ -136,11 +136,11 @@ public:
 	iterator end() {
 		return end_it;
 	}
-	
+
 	bool empty() const {
 		return begin_it == end_it;
 	}
-	
+
 	reference front() {
 		return *begin_it;
 	}
@@ -508,7 +508,7 @@ template<typename T, std::enable_if<std::is_integral<T>::value && std::numeric_l
 using int_bits = std::integral_constant<size_t, std::numeric_limits<T>::digits + std::is_signed<T>::value>;
 
 template<typename T>
-using is_native_fast_int = std::integral_constant<bool, std::is_integral<T>::value && std::is_literal_type<T>::value && sizeof(T) <= sizeof(void*)>;
+using is_native_fast_int = std::integral_constant<bool, std::is_integral<T>::value && sizeof(T) <= sizeof(void*)>;
 
 template<size_t t_integer_bits, size_t t_fractional_bits, bool t_is_signed, bool t_exact_integer_bits = false>
 struct fixed_point {
@@ -737,7 +737,7 @@ public:
 	using const_iterator = typename arr_T::const_iterator;
 	using reverse_iterator = typename arr_T::reverse_iterator;
 	using const_reverse_iterator = typename arr_T::const_reverse_iterator;
-	
+
 	reference at(index_T pos) {
 		return arr.at((size_t)pos);
 	}
@@ -779,7 +779,7 @@ public:
 	}
 	iterator end() noexcept {
 		return arr.end();
-	} 
+	}
 	const_iterator end() const noexcept {
 		return arr.end();
 	}
