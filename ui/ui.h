@@ -2,11 +2,22 @@
 #include "../bwgame.h"
 #include "../replay.h"
 
-#include "native_window.h"
-#include "native_window_drawing.h"
 #include "native_sound.h"
+#include "ui_utils.h"
+#include "user_input_handler.h"
+
+#include "simple/graphical/software_window.h"
+#include "simple/graphical/algorithm/blit.h"
+#include "simple/graphical/algorithm/fill.h"
+
+#include "simple/graphical/initializer.h"
+#include "simple/interactive/initializer.h"
+
+#include <optional>
 
 namespace bwgame {
+
+using namespace simple::graphical::color_literals;
 
 struct vr4_entry {
 	using bitmap_t = std::conditional<is_native_fast_int<uint64_t>::value, uint64_t, uint32_t>::type;
@@ -102,20 +113,20 @@ pcx_image load_pcx_data(const data_T& data) {
 	return pcx;
 }
 
-static inline std::unique_ptr<native_window_drawing::surface> flip_image(native_window_drawing::surface* src) {
-	auto tmp = native_window_drawing::create_rgba_surface(src->w, src->h);
-	src->blit(&*tmp, 0, 0);
-	void* ptr = tmp->lock();
-	uint32_t* pixels = (uint32_t*)ptr;
-	for (size_t y = 0; y != (size_t)tmp->h; ++y) {
-		for (size_t x = 0; x != (size_t)tmp->w / 2; ++x) {
-			std::swap(pixels[x], pixels[tmp->w - 1 - x]);
-		}
-		pixels += tmp->pitch / 4;
-	}
-	tmp->unlock();
-	return tmp;
-}
+// static inline std::unique_ptr<native_window_drawing::surface> flip_image(native_window_drawing::surface* src) {
+// 	auto tmp = native_window_drawing::create_rgba_surface(src->w, src->h);
+// 	src->blit(&*tmp, 0, 0);
+// 	void* ptr = tmp->lock();
+// 	uint32_t* pixels = (uint32_t*)ptr;
+// 	for (size_t y = 0; y != (size_t)tmp->h; ++y) {
+// 		for (size_t x = 0; x != (size_t)tmp->w / 2; ++x) {
+// 			std::swap(pixels[x], pixels[tmp->w - 1 - x]);
+// 		}
+// 		pixels += tmp->pitch / 4;
+// 	}
+// 	tmp->unlock();
+// 	return tmp;
+// }
 
 template<typename load_data_file_F>
 void load_image_data(image_data& img, load_data_file_F&& load_data_file) {
@@ -439,137 +450,74 @@ struct ui_util_functions: replay_functions {
 
 	explicit ui_util_functions(state& st, action_state& action_st, replay_state& replay_st) : replay_functions(st, action_st, replay_st) {}
 
-	rect sprite_clickable_bounds(const sprite_t* sprite) const {
-		rect r{{(int)game_st.map_width - 1, (int)game_st.map_height - 1}, {0, 0}};
-		for (const image_t* image : ptr(sprite->images)) {
-			if (!i_flag(image, image_t::flag_clickable)) continue;
-			xy pos = get_image_map_position(image);
-			auto size = image->grp->frames.at(image->frame_index).size;
-			xy to = pos + xy((int)size.x, (int)size.y);
-			if (pos.x < r.from.x) r.from.x = pos.x;
-			if (pos.y < r.from.y) r.from.y = pos.y;
-			if (to.x > r.to.x) r.to.x = to.x;
-			if (to.y > r.to.y) r.to.y = to.y;
-		}
-		return r;
-	}
 
-	bool unit_can_be_selected(const unit_t* u) const {
-		if (unit_is(u, UnitTypes::Terran_Nuclear_Missile)) return false;
-		if (unit_is(u, UnitTypes::Protoss_Scarab)) return false;
-		if (unit_is(u, UnitTypes::Spell_Disruption_Web)) return false;
-		if (unit_is(u, UnitTypes::Spell_Dark_Swarm)) return false;
-		if (unit_is(u, UnitTypes::Special_Upper_Level_Door)) return false;
-		if (unit_is(u, UnitTypes::Special_Right_Upper_Level_Door)) return false;
-		if (unit_is(u, UnitTypes::Special_Pit_Door)) return false;
-		if (unit_is(u, UnitTypes::Special_Right_Pit_Door)) return false;
-		return true;
-	}
-
-	bool image_has_data_at(const image_t* image, xy pos) const {
-		auto& frame = image->grp->frames.at(image->frame_index);
-		xy map_pos = get_image_map_position(image);
-		int x = pos.x - map_pos.x;
-		if (i_flag(image, image_t::flag_horizontally_flipped)) x = image->grp->width - 2 * frame.offset.x - x;
-		int y = pos.y - map_pos.y;
-		if ((size_t)x >= frame.size.x) return false;
-		if ((size_t)y >= frame.size.y) return false;
-
-		const uint8_t* d = frame.data_container.data() + frame.line_data_offset.at(y);
-		while (x > 0) {
-			int v = *d++;
-			if (v & 0x80) {
-				v &= 0x7f;
-				x -= v;
-				if (x <= 0) return false;
-			} else if (v & 0x40) {
-				v &= 0x3f;
-				d++;
-				x -= v;
-			} else {
-				x -= v;
-			}
-		}
-		return true;
-	}
-
-	bool unit_has_clickable_image_data_at(const unit_t* u, xy pos) const {
-		if (!is_in_bounds(pos, sprite_clickable_bounds(u->sprite))) return false;
-		if (ut_flag(u, unit_type_t::flag_100)) {
-			for (const image_t* image : ptr(u->sprite->images)) {
-				if (!i_flag(image, image_t::flag_clickable)) continue;
-				if (image_has_data_at(image, pos)) return true;
-			}
-			return false;
-		} else {
-			return image_has_data_at(u->sprite->main_image, pos);
-		}
-	}
-
-	unit_t* select_get_unit_at(xy pos) const {
-		rect area = square_at(pos, 32);
-		area.to += xy(game_st.max_unit_width, game_st.max_unit_height);
-		unit_t* best_unit = nullptr;
-		int best_unit_size{};
-		for (unit_t* u : find_units_noexpand(area)) {
-			if (!is_in_bounds(pos, sprite_clickable_bounds(u->sprite))) continue;
-			u = unit_main_unit(u);
-			if (!unit_can_be_selected(u)) continue;
-			if (!best_unit) {
-				best_unit = u;
-				best_unit_size = u->unit_type->placement_size.x * u->unit_type->placement_size.y;
-				continue;
-			}
-			if (sprite_depth_order(u->sprite) >= sprite_depth_order(best_unit->sprite)) {
-				if (unit_has_clickable_image_data_at(u, pos) || (u->subunit && unit_has_clickable_image_data_at(u->subunit, pos))) {
-					best_unit = u;
-					best_unit_size = u->sprite->width * u->sprite->height;
-					continue;
-				}
-			} else {
-				if (unit_has_clickable_image_data_at(best_unit, pos)) continue;
-				if (best_unit->subunit && unit_has_clickable_image_data_at(best_unit->subunit, pos)) continue;
-			}
-			if (u->unit_type->placement_size.x * u->unit_type->placement_size.y < best_unit_size) {
-				best_unit = u;
-				best_unit_size = u->unit_type->placement_size.x * u->unit_type->placement_size.y;
-			}
-		}
-		return best_unit;
-	}
-
-	uint32_t sprite_depth_order(const sprite_t* sprite) const {
-		uint32_t score = 0;
-		score |= sprite->elevation_level;
-		score <<= 13;
-		score |= sprite->elevation_level <= 4 ? sprite->position.y : 0;
-		score <<= 1;
-		score |= s_flag(sprite, sprite_t::flag_turret) ? 1 : 0;
-		return score;
-	}
 
 };
 
 struct ui_functions: ui_util_functions {
 	image_data img;
 	tileset_image_data tileset_img;
-	native_window::window wnd;
-	bool create_window = true;
+	int2 draw_size;
+
+	std::tuple<
+		simple::graphical::initializer,
+		simple::interactive::initializer
+	> simple_init;
+	std::optional<simple::graphical::software_window> wnd;
+	surface rgba_surface;
+	surface indexed_surface;
 	bool draw_ui_elements = true;
 
 	bool exit_on_close = true;
 	bool window_closed = false;
 
-	xy screen_pos;
-
-	size_t screen_width;
-	size_t screen_height;
+	simple::geom::segment<int2> view;
 
 	game_player player;
 	replay_state current_replay_state;
 	action_state current_action_state;
 	std::array<apm_t, 12> apm;
-	ui_functions(game_player player) : ui_util_functions(player.st(), current_action_state, current_replay_state), player(std::move(player)) {
+
+	action_functions* actions_proxy;
+	std::optional<user_input_handler> user_input;
+
+	ui_functions
+	(
+		game_player player,
+		int2 draw_size,
+		bool create_window
+	) :
+		ui_util_functions
+		(
+			player.st(),
+			current_action_state,
+			current_replay_state
+		),
+		draw_size(draw_size),
+		simple_init(),
+		wnd(create_window
+			?  std::optional<simple::graphical::software_window>(
+				std::in_place, "OpenBW", draw_size,
+				simple::graphical::window::flags::resizable)
+			: std::nullopt
+		),
+		rgba_surface(draw_size, simple::graphical::pixel_format::type::rgba32),
+		indexed_surface(draw_size, simple::graphical::pixel_format::type::index8),
+		view{draw_size, int2::zero()},
+		player(std::move(player)), actions_proxy(this), user_input()
+	{
+		rgba_surface.blend(simple::graphical::blend_mode::none);
+		indexed_surface.blend(simple::graphical::blend_mode::none);
+		// rgba_surface.alpha(0);
+		// indexed_surface.alpha(0);
+	}
+
+	void enable_user_input(int owner)
+	{
+		if(wnd)
+		{
+			user_input.emplace(*wnd, owner, *actions_proxy, view);
+		}
 	}
 
 	std::function<void(a_vector<uint8_t>&, a_string)> load_data_file;
@@ -654,10 +602,10 @@ struct ui_functions: ui_util_functions {
 
 		if (position != xy()) {
 			int distance = 0;
-			if (position.x < screen_pos.x) distance += screen_pos.x - position.x;
-			else if (position.x > screen_pos.x + (int)screen_width) distance += position.x - (screen_pos.x + (int)screen_width);
-			if (position.y < screen_pos.y) distance += screen_pos.y - position.y;
-			else if (position.y > screen_pos.y + (int)screen_height) distance += position.y - (screen_pos.y + (int)screen_height);
+			if (position.x < view.position.x()) distance += view.position.x() - position.x;
+			else if (position.x > view.position.x() + (int)draw_size.x()) distance += position.x - (view.position.x() + (int)draw_size.x());
+			if (position.y < view.position.y()) distance += view.position.y() - position.y;
+			else if (position.y > view.position.y() + (int)draw_size.y()) distance += position.y - (view.position.y() + (int)draw_size.y());
 
 			int distance_volume = 99 - 99 * distance / 512;
 
@@ -667,7 +615,7 @@ struct ui_functions: ui_util_functions {
 		if (volume > 10) {
 			int pan = 0;
 //			if (position != xy()) {
-//				int pan_x = (position.x - (screen_pos.x + (int)screen_width / 2)) / 32;
+//				int pan_x = (position.x - (view.position.x() + (int)draw_size.x() / 2)) / 32;
 //				bool left = pan_x < 0;
 //				if (left) pan_x = -pan_x;
 //				if (pan_x <= 2) pan = 0;
@@ -746,24 +694,22 @@ struct ui_functions: ui_util_functions {
 		load_data_file(images_tbl.data, "arr/images.tbl");
 
 		load_all_image_data(load_data_file);
+
+		set_image_data();
 	}
 
 	virtual void on_action(int owner, int action) override {
 		apm.at(owner).add_action(st.current_frame);
 	}
 
-	size_t view_width;
-	size_t view_height;
-	fp16 view_scale;
-
 	rect_t<xy_t<size_t>> screen_tile_bounds() {
-		size_t from_tile_y = screen_pos.y / 32u;
+		size_t from_tile_y = view.position.y() / 32u;
 		if (from_tile_y >= game_st.map_tile_height) from_tile_y = 0;
-		size_t to_tile_y = (screen_pos.y + view_height + 31) / 32u;
+		size_t to_tile_y = (view.position.y() + view.size.y() + 31) / 32u;
 		if (to_tile_y > game_st.map_tile_height) to_tile_y = game_st.map_tile_height;
-		size_t from_tile_x = screen_pos.x / 32u;
+		size_t from_tile_x = view.position.x() / 32u;
 		if (from_tile_x >= game_st.map_tile_width) from_tile_x = 0;
-		size_t to_tile_x = (screen_pos.x + view_width + 31) / 32u;
+		size_t to_tile_x = (view.position.x() + view.size.x() + 31) / 32u;
 		if (to_tile_x > game_st.map_tile_width) to_tile_x = game_st.map_tile_width;
 
 		return {{from_tile_x, from_tile_y}, {to_tile_x, to_tile_y}};
@@ -784,8 +730,8 @@ struct ui_functions: ui_util_functions {
 		for (size_t tile_y = screen_tile.from.y; tile_y != screen_tile.to.y; ++tile_y) {
 			for (size_t tile_x = screen_tile.from.x; tile_x != screen_tile.to.x; ++tile_x) {
 
-				int screen_x = tile_x * 32 - screen_pos.x;
-				int screen_y = tile_y * 32 - screen_pos.y;
+				int screen_x = tile_x * 32 - view.position.x();
+				int screen_y = tile_y * 32 - view.position.y();
 
 				size_t offset_x = 0;
 				size_t offset_y = 0;
@@ -801,8 +747,8 @@ struct ui_functions: ui_util_functions {
 				size_t width = 32;
 				size_t height = 32;
 
-				width = std::min(width, screen_width - screen_x);
-				height = std::min(height, screen_height - screen_y);
+				width = std::min(width, size_t(draw_size.x() - screen_x));
+				height = std::min(height, size_t(draw_size.y() - screen_y));
 
 				size_t index = *megatile_index;
 				if (tile->flags & tile_t::flag_has_creep) {
@@ -831,7 +777,7 @@ struct ui_functions: ui_util_functions {
 						size_t width = frame.size.x;
 						size_t height = frame.size.y;
 
-						if (screen_x < (int)screen_width && screen_y < (int)screen_height) {
+						if (screen_x < (int)draw_size.x() && screen_y < (int)draw_size.y()) {
 							if (screen_x + (int)width > 0 && screen_y + (int)height > 0) {
 
 								size_t offset_x = 0;
@@ -845,8 +791,8 @@ struct ui_functions: ui_util_functions {
 
 								uint8_t* dst = data + screen_y * data_pitch + screen_x;
 
-								width = std::min(width, screen_width - screen_x);
-								height = std::min(height, screen_height - screen_y);
+								width = std::min(width, size_t(draw_size.x() - screen_x));
+								height = std::min(height, size_t(draw_size.y() - screen_y));
 
 								draw_frame(frame, false, dst, data_pitch, offset_x, offset_y, width, height);
 							}
@@ -875,10 +821,10 @@ struct ui_functions: ui_util_functions {
 
 		xy map_pos = get_image_map_position(image);
 
-		int screen_x = map_pos.x - screen_pos.x;
-		int screen_y = map_pos.y - screen_pos.y;
+		int screen_x = map_pos.x - view.position.x();
+		int screen_y = map_pos.y - view.position.y();
 
-		if (screen_x >= (int)screen_width || screen_y >= (int)screen_height) return;
+		if (screen_x >= (int)draw_size.x() || screen_y >= (int)draw_size.y()) return;
 
 		auto& frame = image->grp->frames.at(image->frame_index);
 
@@ -898,8 +844,8 @@ struct ui_functions: ui_util_functions {
 
 		uint8_t* dst = data + screen_y * data_pitch + screen_x;
 
-		width = std::min(width, screen_width - screen_x);
-		height = std::min(height, screen_height - screen_y);
+		width = std::min(width, size_t(draw_size.x() - screen_x));
+		height = std::min(height, size_t(draw_size.y() - screen_y));
 
 		auto draw_alpha = [&](size_t index, auto remap_f) {
 			auto& data = tileset_img.light_pcx.at(index).data;
@@ -942,7 +888,7 @@ struct ui_functions: ui_util_functions {
 				return new_value;
 			});
 		} else if (image->modifier == 8) {
-			size_t data_size = data_pitch * screen_height;
+			size_t data_size = data_pitch * draw_size.y();
 			auto distortion = [data_size, dst](uint8_t new_value, uint8_t& old_value) {
 				size_t offset = &old_value - dst;
 				if (offset >= new_value && data_size - offset > new_value) return *(&old_value + new_value);
@@ -989,10 +935,10 @@ struct ui_functions: ui_util_functions {
 		map_pos.x += int(frame.offset.x - grp->width / 2);
 		map_pos.y += int(frame.offset.y - grp->height / 2);
 
-		int screen_x = map_pos.x - screen_pos.x;
-		int screen_y = map_pos.y - screen_pos.y;
+		int screen_x = map_pos.x - view.position.x();
+		int screen_y = map_pos.y - view.position.y();
 
-		if (screen_x >= (int)screen_width || screen_y >= (int)screen_height) return;
+		if (screen_x >= (int)draw_size.x() || screen_y >= (int)draw_size.y()) return;
 
 		size_t width = frame.size.x;
 		size_t height = frame.size.y;
@@ -1010,8 +956,8 @@ struct ui_functions: ui_util_functions {
 
 		uint8_t* dst = data + screen_y * data_pitch + screen_x;
 
-		width = std::min(width, screen_width - screen_x);
-		height = std::min(height, screen_height - screen_y);
+		width = std::min(width, size_t(draw_size.x() - screen_x));
+		height = std::min(height, size_t(draw_size.y() - screen_y));
 
 		size_t color_index = st.players[sprite->owner].color;
 		uint8_t color = img.player_unit_colors.at(color_index)[0];
@@ -1051,10 +997,10 @@ struct ui_functions: ui_util_functions {
 		map_pos.x += int(0 - width / 2);
 		map_pos.y += int(0 - height / 2);
 
-		int screen_x = map_pos.x - screen_pos.x;
-		int screen_y = map_pos.y - screen_pos.y;
+		int screen_x = map_pos.x - view.position.x();
+		int screen_y = map_pos.y - view.position.y();
 
-		if (screen_x >= (int)screen_width || screen_y >= (int)screen_height) return;
+		if (screen_x >= (int)draw_size.x() || screen_y >= (int)draw_size.y()) return;
 		if (screen_x + width <= 0 || screen_y + height <= 0) return;
 
 		auto filled_width = [&](int percent) {
@@ -1117,8 +1063,8 @@ struct ui_functions: ui_util_functions {
 
 		uint8_t* dst = data + screen_y * data_pitch + screen_x;
 
-		width = std::min(width, (int)screen_width - screen_x);
-		height = std::min(height, (int)screen_height - screen_y);
+		width = std::min(width, (int)draw_size.x() - screen_x);
+		height = std::min(height, (int)draw_size.y() - screen_y);
 
 		if (dw > width) dw = width;
 		if (shield_dw > width) shield_dw = width;
@@ -1241,11 +1187,21 @@ struct ui_functions: ui_util_functions {
 
 		std::sort(sorted_sprites.begin(), sorted_sprites.end());
 
-		for (auto uid : current_selection) {
-			auto* u = get_unit(uid);
-			if (!u) continue;
-			current_selection_sprites_set.at(u->sprite->index) = u;
-			current_selection_sprites.push_back(u->sprite);
+		if(user_input)
+		{
+			for (auto u : actions_proxy->selected_units(user_input->owner)) {
+				current_selection_sprites_set.at(u->sprite->index) = u;
+				current_selection_sprites.push_back(u->sprite);
+			}
+		}
+		else
+		{
+			for (auto uid : current_selection) {
+				auto* u = get_unit(uid);
+				if (!u) continue;
+				current_selection_sprites_set.at(u->sprite->index) = u;
+				current_selection_sprites.push_back(u->sprite);
+			}
 		}
 
 		for (auto& v : sorted_sprites) {
@@ -1258,59 +1214,6 @@ struct ui_functions: ui_util_functions {
 		current_selection_sprites.clear();
 	}
 
-	void fill_rectangle(uint8_t* data, size_t data_pitch, rect area, uint8_t index) {
-		if (area.from.x < 0) area.from.x = 0;
-		if (area.from.y < 0) area.from.y = 0;
-		if (area.to.x > (int)screen_width) area.to.x = screen_width;
-		if (area.to.y > (int)screen_height) area.to.y = screen_height;
-		if (area.from.x >= area.to.x || area.from.y >= area.to.y) return;
-		size_t width = area.to.x - area.from.x;
-		size_t pitch = data_pitch;
-		size_t from_y = area.from.y;
-		size_t to_y = area.to.y;
-		uint8_t* ptr = data + data_pitch * from_y + area.from.x;
-		for (size_t i = from_y; i != to_y; ++i) {
-			memset(ptr, index, width);
-			ptr += pitch;
-		}
-	}
-
-	void line_rectangle(uint8_t* data, size_t data_pitch, rect area, uint8_t index) {
-		if (area.from.x < 0) area.from.x = 0;
-		if (area.from.y < 0) area.from.y = 0;
-		if (area.to.x > (int)screen_width) area.to.x = screen_width;
-		if (area.to.y > (int)screen_height) area.to.y = screen_height;
-		if (area.from.x >= area.to.x || area.from.y >= area.to.y) return;
-		size_t width = area.to.x - area.from.x;
-		size_t height = area.to.y - area.from.y;
-		uint8_t* p = data + data_pitch * (size_t)area.from.y + (size_t)area.from.x;
-		memset(p, index, width);
-		memset(p + data_pitch * height, index, width);
-		for (size_t y = 0; y != height; ++y) {
-			p[data_pitch * y] = index;
-			p[data_pitch * y + width - 1] = index;
-		}
-	}
-
-	void line_rectangle_rgba(uint32_t* data, size_t data_pitch, rect area, uint32_t color) {
-		if (area.from.x < 0) area.from.x = 0;
-		if (area.from.y < 0) area.from.y = 0;
-		if (area.to.x > (int)screen_width) area.to.x = screen_width;
-		if (area.to.y > (int)screen_height) area.to.y = screen_height;
-		if (area.from.x >= area.to.x || area.from.y >= area.to.y) return;
-		size_t width = area.to.x - area.from.x;
-		size_t height = area.to.y - area.from.y;
-		uint32_t* p = data + data_pitch * (size_t)area.from.y + (size_t)area.from.x;
-		for (size_t x = 0; x != width; ++x) {
-			p[x] = color;
-			p[height * data_pitch + x] = color;
-		}
-		for (size_t y = 0; y != height; ++y) {
-			p[data_pitch * y] = color;
-			p[data_pitch * y + width - 1] = color;
-		}
-	}
-
 	bool unit_visble_on_minimap(unit_t* u) {
 		if (u->owner < 8 && u->sprite->visibility_flags == 0) return false;
 		if (ut_turret(u)) return false;
@@ -1320,7 +1223,7 @@ struct ui_functions: ui_util_functions {
 		return true;
 	}
 
-	rect get_minimap_area() {
+	simple::geom::segment<int2> get_minimap_area() {
 		size_t minimap_width = std::max(game_st.map_tile_width, game_st.map_tile_height);
 		size_t minimap_height = std::max(game_st.map_tile_width, game_st.map_tile_height);
 		if (game_st.map_width < game_st.map_height) {
@@ -1328,108 +1231,111 @@ struct ui_functions: ui_util_functions {
 		} else if (game_st.map_height < game_st.map_width) {
 			minimap_height = minimap_height * minimap_height * game_st.map_tile_height / (minimap_width* game_st.map_tile_width);
 		}
-		if (screen_width < minimap_width || screen_height < minimap_height) return {};
+		if (draw_size.x() < minimap_width || draw_size.y() < minimap_height) return {};
 		int map_screen_x = 4;
-		int map_screen_y = screen_height - 4 - minimap_height;
-		rect area;
-		area.from = {map_screen_x, map_screen_y};
-		area.to = area.from + xy{(int)minimap_width, (int)minimap_height};
-		return area;
+		int map_screen_y = draw_size.y() - 4 - minimap_height;
+		return
+		{
+			int2(minimap_width, minimap_height),
+			int2(map_screen_x, map_screen_y)
+		};
 	}
 
-	void draw_minimap(uint8_t* data, size_t data_pitch) {
+	void draw_minimap(pixel_writer pixels) {
 		auto area = get_minimap_area();
-		size_t minimap_width = area.to.x - area.from.x;
-		size_t minimap_height = area.to.y - area.from.y;
-		if (minimap_width != game_st.map_tile_width) return;
-		if (minimap_height != game_st.map_tile_height) return;
-		fill_rectangle(data, data_pitch, area, 0);
-		line_rectangle(data, data_pitch, {area.from - xy(1, 1), area.to + xy(1, 1)}, 0);
+		if(area.size != int2{game_st.map_tile_width, game_st.map_tile_height}) return;
+		fill_rectangle(pixels, area, 0);
+		outline_rectangle(pixels, area, 1, 0);
 
-		uint8_t* p = data + data_pitch * (size_t)area.from.y + (size_t)area.from.x;
+		auto minimap_pixels = pixel_writer(pixels, area);
 
-		size_t pitch = data_pitch - game_st.map_tile_width;
-		for (size_t y = 0; y != game_st.map_tile_height; ++y) {
-			for (size_t x = 0; x != game_st.map_tile_width; ++x) {
-				size_t index;
-				if (~st.tiles[y * game_st.map_tile_width + x].flags & tile_t::flag_has_creep) index = st.tiles_mega_tile_index[y * game_st.map_tile_width + x];
-				else index = game_st.cv5.at(1).mega_tile_index[creep_random_tile_indices[y * game_st.map_tile_width + x]];
-				auto* images = &tileset_img.vx4.at(index).images[0];
-				auto* bitmap = &tileset_img.vr4.at(*images / 2).bitmap[0];
-				auto val = bitmap[55 / sizeof(vr4_entry::bitmap_t)];
-				size_t shift = 8 * (55 % sizeof(vr4_entry::bitmap_t));
-				val >>= shift;
-				*p++ = (uint8_t)val;
-			}
-			p += pitch;
-		}
+		loop(minimap_pixels.size(), [this, &minimap_pixels](auto i)
+		{
+			int flat_i = i.y() * minimap_pixels.size().x() + i.x();
+			size_t index;
+			if (~st.tiles[flat_i].flags & tile_t::flag_has_creep) index = st.tiles_mega_tile_index[flat_i];
+			else index = game_st.cv5.at(1).mega_tile_index[creep_random_tile_indices[flat_i]];
+			auto* images = &tileset_img.vx4.at(index).images[0];
+			auto* bitmap = &tileset_img.vr4.at(*images / 2).bitmap[0];
+			auto val = bitmap[55 / sizeof(vr4_entry::bitmap_t)];
+			size_t shift = 8 * (55 % sizeof(vr4_entry::bitmap_t));
+			val >>= shift;
+			minimap_pixels.set(val, i);
+		});
 
 		for (size_t i = 12; i != 0;) {
 			--i;
 			for (unit_t* u : ptr(st.player_units[i])) {
 				if (!unit_visble_on_minimap(u)) continue;
+
 				int color = img.player_minimap_colors.at(st.players[u->owner].color);
-				size_t w = u->unit_type->placement_size.x / 32u;
-				size_t h = u->unit_type->placement_size.y / 32u;
 				if (unit_is_mineral_field(u) || unit_is(u, UnitTypes::Resource_Vespene_Geyser)) {
 					color = tileset_img.resource_minimap_color;
 				}
-				if (ut_building(u)) {
-					if (w > 4) w = 4;
-					if (h > 4) h = 4;
-				}
-				if (w < 2) w = 2;
-				if (h < 2) h = 2;
-				rect unit_area;
-				unit_area.from = area.from + (u->sprite->position - u->unit_type->placement_size / 2) / 32u;
-				unit_area.to = unit_area.from + xy(w, h);
-				fill_rectangle(data, data_pitch, unit_area, color);
+
+				auto size = to_int2(u->unit_type->placement_size);
+				size /= 32;
+				auto min = int2::one(2);
+				auto max = ut_building(u) ? int2::one(4) : area.size;
+				size.clamp(min, max);
+
+				simple::geom::segment unit_area
+				{
+					size,
+					to_int2((u->sprite->position - u->unit_type->placement_size / 2) / 32u)
+				};
+				fill_rectangle(minimap_pixels, unit_area, color);
 			}
 		}
 
-		rect view_rect;
-		view_rect.from = area.from + xy(screen_pos.x / 32u, screen_pos.y / 32u);
-		view_rect.to = view_rect.from + xy((view_width + 31) / 32u, (view_height + 31) / 32u);
-		line_rectangle(data, data_pitch, view_rect, 255);
-
+		line_rectangle( minimap_pixels, simple::geom::segment
+			{
+				(view.size + 31) / 32,
+				view.position / 32
+			},
+			255);
 	}
 
 	int replay_frame = 0;
 
-	rect get_replay_slider_area() {
+	simple::geom::segment<int2> get_replay_slider_area() {
 #ifdef EMSCRIPTEN
 		return {};
 #endif
-		rect r;
-		int width = 192;
-		int height = 32;
-		r.from.x = (int)screen_width - 8 - width;
-		r.from.y = (int)screen_height - 8 - 128 - height;
-		r.to.x = r.from.x + width;
-		r.to.y = r.from.y + height;
-		if (r.from.x < 0 || r.from.y < 0) return {};
-		return r;
+		int2 size(192, 32);
+		int2 position = draw_size - 8 - int2::j(128) - size;
+		if (not(position >= int2::zero())) return {};
+		return {size, position};
 	}
 
-	void draw_ui(uint8_t* data, size_t data_pitch) {
+	void draw_ui(pixel_writer pixels) {
 		auto area = get_replay_slider_area();
-		if (area == rect{}) return;
+		if (area == simple::geom::segment<int2>{}) return;
 		if (replay_st.end_frame == 0) return;
-		fill_rectangle(data, data_pitch, area, 1);
-		line_rectangle(data, data_pitch, area, 12);
+		fill_rectangle(pixels, area, 1);
+		line_rectangle(pixels, area, 12);
 
-		int button_w = 16;
-		int button_h = 32;
-		int ow = (area.to.x - area.from.x) - button_w;
+		int2 button_size(16,32);
+		int ow = area.size.x() - button_size.x();
 		int ox = replay_frame * ow / replay_st.end_frame;
 
 		if (st.current_frame != replay_frame) {
 			int cox = st.current_frame * ow / replay_st.end_frame;
-			line_rectangle(data, data_pitch, rect{area.from + xy(cox + button_w / 2, 0), area.from + xy(cox + button_w / 2 + 1, button_h)}, 50);
+			line_rectangle(pixels,
+				{
+					area.position + int2(cox + button_size.x() / 2, 0),
+					area.position + int2(cox + button_size.x() / 2 + 1, button_size.y())},
+				50);
 		}
 
-		fill_rectangle(data, data_pitch, rect{area.from + xy(ox, 0), area.from + xy(ox, 0) + xy(button_w, button_h)}, 10);
-		line_rectangle(data, data_pitch, rect{area.from + xy(ox, 0), area.from + xy(ox, 0) + xy(button_w, button_h)}, 51);
+		simple::geom::segment button_area
+		{
+			button_size,
+			int2::i(ox) + area.position,
+		};
+		fill_rectangle(pixels, button_area, 10);
+		line_rectangle(pixels, button_area, 51);
+
 
 	}
 
@@ -1446,197 +1352,194 @@ struct ui_functions: ui_util_functions {
 	a_unordered_set<a_string> new_images_index;
 	string_table_data images_tbl;
 
-	a_vector<a_vector<std::unique_ptr<native_window_drawing::surface>>> new_images;
-	a_vector<a_vector<std::unique_ptr<native_window_drawing::surface>>> new_images_flipped;
+	// a_vector<a_vector<std::unique_ptr<native_window_drawing::surface>>> new_images;
+	// a_vector<a_vector<std::unique_ptr<native_window_drawing::surface>>> new_images_flipped;
 
 	bool is_new_image(const image_t* image) {
-		if (!use_new_images) return false;
-		if (!new_images_index_loaded) {
-			new_images_index_loaded = true;
-			async_read_file("index.txt", [this](const uint8_t* data, size_t len) {
-				if (!data) {
-					ui::log("failed to load index.txt :(\n");
-					return;
-				}
-				char* c = (char*)data;
-				char* e = (char*)data + len;
-				while (c != e && (*c == '\r' || *c =='\n' || *c == ' ')) ++c;
-				while (c != e) {
-					char* s = c;
-					while (c != e && *c != '\r' && *c !='\n' && *c != ' ') ++c;
-					a_string fn(s, c - s);
-					while (c != e && (*c == '\r' || *c =='\n' || *c == ' ')) ++c;
-					for (char& c : fn) {
-						if (c == '\\') c = '/';
-					}
-					if (!fn.empty() && fn.front() == '/') fn.erase(fn.begin());
-					if (!fn.empty() && fn.back() == '/') fn.erase(std::prev(fn.end()));
-					ui::log("index entry '%s'\n", fn);
-					new_images_index.insert(std::move(fn));
-				}
-			});
-		}
-		if (new_images_index.empty()) return false;
-		size_t index = image->grp - global_st.grps.data();
-		auto& state = grp_new_image_state.at(index);
-		if (state == 0) {
-			state = 2;
-			a_string fn = images_tbl.at(image->image_type->grp_filename_index);
-			for (char& c : fn) {
-				if (c == '\\') c = '/';
-			}
-			for (auto i = fn.rbegin(); i != fn.rend(); ++i) {
-				if (*i == '.') {
-					fn.erase(std::prev(i.base()), fn.end());
-				}
-				if (*i == '/') break;
-			}
-			if (!fn.empty() && fn.front() == '/') fn.erase(fn.begin());
-			fn = "unit/" + fn;
-			ui::log("checking '%s' (image %d, grp %u)\n", fn, (int)image->image_type->id, index);
-			if (new_images_index.count(fn)) {
-				size_t frames = image->grp->frames.size();
-				if (new_images.size() <= index) new_images.resize(index + 1);
-				new_images[index].resize(frames);
-				if (new_images_flipped.size() <= index) new_images_flipped.resize(index + 1);
-				new_images_flipped[index].resize(frames);
-				ui::log("loading %d frames...\n", frames);
-				auto frames_left = std::make_shared<size_t>(frames);
-				for (size_t i = 0; i != frames; ++i) {
-					a_string frame_fn = format("%s/%02u.png", fn, i);
-					async_read_file(frame_fn, [this, frame_fn, index, i, frames_left](const uint8_t* data, size_t len) {
-						if (!data) {
-							ui::log("failed to load '%s'\n", frame_fn);
-							return;
-						}
-						new_images.at(index).at(i) = native_window_drawing::load_image(data, len);
-						--*frames_left;
-						if (*frames_left == 0) {
-							grp_new_image_state.at(index) = 1;
-
-							ui::log("grp %d successfully loaded %d frames\n", index, new_images.at(index).size());
-						}
-					});
-				}
-			}
-		}
-		//ui::log("index %d state %d\n", index, state);
-		return state == 1;
+		return false;
+		// if (!use_new_images) return false;
+		// if (!new_images_index_loaded) {
+		// 	new_images_index_loaded = true;
+		// 	async_read_file("index.txt", [this](const uint8_t* data, size_t len) {
+		// 		if (!data) {
+		// 			ui::log("failed to load index.txt :(\n");
+		// 			return;
+		// 		}
+		// 		char* c = (char*)data;
+		// 		char* e = (char*)data + len;
+		// 		while (c != e && (*c == '\r' || *c =='\n' || *c == ' ')) ++c;
+		// 		while (c != e) {
+		// 			char* s = c;
+		// 			while (c != e && *c != '\r' && *c !='\n' && *c != ' ') ++c;
+		// 			a_string fn(s, c - s);
+		// 			while (c != e && (*c == '\r' || *c =='\n' || *c == ' ')) ++c;
+		// 			for (char& c : fn) {
+		// 				if (c == '\\') c = '/';
+		// 			}
+		// 			if (!fn.empty() && fn.front() == '/') fn.erase(fn.begin());
+		// 			if (!fn.empty() && fn.back() == '/') fn.erase(std::prev(fn.end()));
+		// 			ui::log("index entry '%s'\n", fn);
+		// 			new_images_index.insert(std::move(fn));
+		// 		}
+		// 	});
+		// }
+		// if (new_images_index.empty()) return false;
+		// size_t index = image->grp - global_st.grps.data();
+		// auto& state = grp_new_image_state.at(index);
+		// if (state == 0) {
+		// 	state = 2;
+		// 	a_string fn = images_tbl.at(image->image_type->grp_filename_index);
+		// 	for (char& c : fn) {
+		// 		if (c == '\\') c = '/';
+		// 	}
+		// 	for (auto i = fn.rbegin(); i != fn.rend(); ++i) {
+		// 		if (*i == '.') {
+		// 			fn.erase(std::prev(i.base()), fn.end());
+		// 		}
+		// 		if (*i == '/') break;
+		// 	}
+		// 	if (!fn.empty() && fn.front() == '/') fn.erase(fn.begin());
+		// 	fn = "unit/" + fn;
+		// 	ui::log("checking '%s' (image %d, grp %u)\n", fn, (int)image->image_type->id, index);
+		// 	if (new_images_index.count(fn)) {
+		// 		size_t frames = image->grp->frames.size();
+		// 		if (new_images.size() <= index) new_images.resize(index + 1);
+		// 		new_images[index].resize(frames);
+		// 		if (new_images_flipped.size() <= index) new_images_flipped.resize(index + 1);
+		// 		new_images_flipped[index].resize(frames);
+		// 		ui::log("loading %d frames...\n", frames);
+		// 		auto frames_left = std::make_shared<size_t>(frames);
+		// 		for (size_t i = 0; i != frames; ++i) {
+		// 			a_string frame_fn = format("%s/%02u.png", fn, i);
+		// 			async_read_file(frame_fn, [this, frame_fn, index, i, frames_left](const uint8_t* data, size_t len) {
+		// 				if (!data) {
+		// 					ui::log("failed to load '%s'\n", frame_fn);
+		// 					return;
+		// 				}
+		// 				new_images.at(index).at(i) = native_window_drawing::load_image(data, len);
+		// 				--*frames_left;
+		// 				if (*frames_left == 0) {
+		// 					grp_new_image_state.at(index) = 1;
+        //
+		// 					ui::log("grp %d successfully loaded %d frames\n", index, new_images.at(index).size());
+		// 				}
+		// 			});
+		// 		}
+		// 	}
+		// }
+		// //ui::log("index %d state %d\n", index, state);
+		// return state == 1;
 	}
 
-	native_window_drawing::surface* get_new_image_surface(const image_t* image, bool flipped) {
-		size_t index = image->grp - global_st.grps.data();
-		size_t frame = image->frame_index;
-		if (flipped) {
-			auto& r = new_images_flipped.at(index).at(frame);
-			if (!r) {
-				auto* s = new_images.at(index).at(frame).get();
-				if (!s) return nullptr;
-				r = flip_image(s);
-			}
-			return r.get();
-		} else {
-			return new_images.at(index).at(frame).get();
-		}
-	}
+	// native_window_drawing::surface* get_new_image_surface(const image_t* image, bool flipped) {
+	// 	size_t index = image->grp - global_st.grps.data();
+	// 	size_t frame = image->frame_index;
+	// 	if (flipped) {
+	// 		auto& r = new_images_flipped.at(index).at(frame);
+	// 		if (!r) {
+	// 			auto* s = new_images.at(index).at(frame).get();
+	// 			if (!s) return nullptr;
+	// 			r = flip_image(s);
+	// 		}
+	// 		return r.get();
+	// 	} else {
+	// 		return new_images.at(index).at(frame).get();
+	// 	}
+	// }
 
-	std::unique_ptr<native_window_drawing::surface> tmp_surface;
+	// std::unique_ptr<native_window_drawing::surface> tmp_surface;
 
-	void draw_new_image(const image_t* image) {
-		xy map_pos = get_image_center_map_position(image);
-
-		int screen_x = map_pos.x - screen_pos.x;
-		int screen_y = map_pos.y - screen_pos.y;
-
-		auto* surface = get_new_image_surface(image, i_flag(image, image_t::flag_horizontally_flipped));
-		if (!surface) {
-			ui::log("ERROR: new image %d (grp %d) frame %d does not exist\n", (int)image->image_type->id, image->grp - global_st.grps.data(), image->frame_index);
-			return;
-		}
-
-		auto scale = 114_fp8;
-
-		size_t w = (fp8::integer(surface->w) * scale).integer_part();
-		size_t h = (fp8::integer(surface->w) * scale).integer_part();
-
-		size_t orig_w = w;
-		size_t orig_h = h;
-
-		screen_x -= w / 2;
-		screen_y -= w / 2;
-
-		if (screen_x >= (int)screen_width || screen_y >= (int)screen_height) return;
-		if (screen_x + (int)w <= 0 || screen_y + (int)h <= 0) return;
-
-		size_t offset_x = 0;
-		size_t offset_y = 0;
-		if (screen_x < 0) {
-			offset_x = -screen_x;
-			w += screen_x;
-			screen_x = 0;
-		}
-		if (screen_y < 0) {
-			offset_y = -screen_y;
-			h += screen_y;
-			screen_y = 0;
-		}
-
-		w = std::min(w, screen_width - screen_x);
-		h = std::min(h, screen_height - screen_y);
-
-		if (image->modifier == 10) {
-			if (!tmp_surface || (size_t)tmp_surface->w < orig_w || (size_t)tmp_surface->h < orig_h) {
-				tmp_surface = native_window_drawing::create_rgba_surface(orig_w, orig_h);
-			}
-			surface->set_blend_mode(native_window_drawing::blend_mode::none);
-			surface->blit_scaled(&*tmp_surface, 0, 0, orig_w, orig_h);
-
-			size_t src_pitch = tmp_surface->pitch / 4;
-			size_t dst_pitch = rgba_surface->pitch / 4;
-			uint32_t* src = (uint32_t*)tmp_surface->lock();
-			uint32_t* dst = (uint32_t*)rgba_surface->lock();
-
-			src += src_pitch * offset_y + offset_x;
-			dst += dst_pitch * screen_y + screen_x;
-
-			size_t src_skip = src_pitch - w;
-			size_t dst_skip = dst_pitch - w;
-
-			for (size_t y = h; y--;) {
-
-				for (size_t x = w; x--;) {
-					uint32_t s = *src;
-					uint32_t d = *dst;
-					if (s >> 24 >= 16) *dst = (d & 0xfefefe) / 2 | 0xff000000;
-					++src;
-					++dst;
-				}
-
-				src += src_skip;
-				dst += dst_skip;
-			}
-
-			tmp_surface->unlock();
-			rgba_surface->unlock();
-
-		} else {
-			surface->set_blend_mode(native_window_drawing::blend_mode::alpha);
-			surface->blit_scaled(&*rgba_surface, screen_x - offset_x, screen_y - offset_y, orig_w, orig_h);
-		}
-	}
+	// void draw_new_image(const image_t* image) {
+	// 	xy map_pos = get_image_center_map_position(image);
+    //
+	// 	int screen_x = map_pos.x - view.position.x();
+	// 	int screen_y = map_pos.y - view.position.y();
+    //
+	// 	auto* surface = get_new_image_surface(image, i_flag(image, image_t::flag_horizontally_flipped));
+	// 	if (!surface) {
+	// 		ui::log("ERROR: new image %d (grp %d) frame %d does not exist\n", (int)image->image_type->id, image->grp - global_st.grps.data(), image->frame_index);
+	// 		return;
+	// 	}
+    //
+	// 	auto scale = 114_fp8;
+    //
+	// 	size_t w = (fp8::integer(surface->w) * scale).integer_part();
+	// 	size_t h = (fp8::integer(surface->w) * scale).integer_part();
+    //
+	// 	size_t orig_w = w;
+	// 	size_t orig_h = h;
+    //
+	// 	screen_x -= w / 2;
+	// 	screen_y -= w / 2;
+    //
+	// 	if (screen_x >= (int)draw_size.x() || screen_y >= (int)draw_size.y()) return;
+	// 	if (screen_x + (int)w <= 0 || screen_y + (int)h <= 0) return;
+    //
+	// 	size_t offset_x = 0;
+	// 	size_t offset_y = 0;
+	// 	if (screen_x < 0) {
+	// 		offset_x = -screen_x;
+	// 		w += screen_x;
+	// 		screen_x = 0;
+	// 	}
+	// 	if (screen_y < 0) {
+	// 		offset_y = -screen_y;
+	// 		h += screen_y;
+	// 		screen_y = 0;
+	// 	}
+    //
+	// 	w = std::min(w, draw_size.x() - screen_x);
+	// 	h = std::min(h, draw_size.y() - screen_y);
+    //
+	// 	if (image->modifier == 10) {
+	// 		if (!tmp_surface || (size_t)tmp_surface->w < orig_w || (size_t)tmp_surface->h < orig_h) {
+	// 			tmp_surface = native_window_drawing::create_rgba_surface(orig_w, orig_h);
+	// 		}
+	// 		surface->set_blend_mode(native_window_drawing::blend_mode::none);
+	// 		surface->blit_scaled(&*tmp_surface, 0, 0, orig_w, orig_h);
+    //
+	// 		size_t src_pitch = tmp_surface->pitch / 4;
+	// 		size_t dst_pitch = rgba_surface->pitch / 4;
+	// 		uint32_t* src = (uint32_t*)tmp_surface->lock();
+	// 		uint32_t* dst = (uint32_t*)rgba_surface->lock();
+    //
+	// 		src += src_pitch * offset_y + offset_x;
+	// 		dst += dst_pitch * screen_y + screen_x;
+    //
+	// 		size_t src_skip = src_pitch - w;
+	// 		size_t dst_skip = dst_pitch - w;
+    //
+	// 		for (size_t y = h; y--;) {
+    //
+	// 			for (size_t x = w; x--;) {
+	// 				uint32_t s = *src;
+	// 				uint32_t d = *dst;
+	// 				if (s >> 24 >= 16) *dst = (d & 0xfefefe) / 2 | 0xff000000;
+	// 				++src;
+	// 				++dst;
+	// 			}
+    //
+	// 			src += src_skip;
+	// 			dst += dst_skip;
+	// 		}
+    //
+	// 		tmp_surface->unlock();
+	// 		rgba_surface->unlock();
+    //
+	// 	} else {
+	// 		surface->set_blend_mode(native_window_drawing::blend_mode::alpha);
+	// 		surface->blit_scaled(&*rgba_surface, screen_x - offset_x, screen_y - offset_y, orig_w, orig_h);
+	// 	}
+	// }
 
 	void draw_image_queue() {
-		for (auto* image : image_draw_queue) {
-			draw_new_image(image);
-		}
+		// for (auto* image : image_draw_queue) {
+		// 	draw_new_image(image);
+		// }
 	}
 
 	fp8 game_speed = fp8::integer(1);
 
-	std::unique_ptr<native_window_drawing::surface> window_surface;
-	std::unique_ptr<native_window_drawing::surface> indexed_surface;
-	std::unique_ptr<native_window_drawing::surface> rgba_surface;
-	native_window_drawing::palette* palette = nullptr;
 	std::chrono::high_resolution_clock clock;
 	std::chrono::high_resolution_clock::time_point last_draw;
 	std::chrono::high_resolution_clock::time_point last_input_poll;
@@ -1644,18 +1547,16 @@ struct ui_functions: ui_util_functions {
 	int fps_counter = 0;
 	size_t scroll_speed_n = 0;
 
-	void resize(int width, int height) {
-		if (!wnd && create_window) wnd.create("OpenBW", 0, 0, width, height);
-		screen_width = width;
-		screen_height = height;
-		//view_scale = fp16::integer(1) - (fp16::integer(1) / 4);
-		view_scale = fp16::integer(1);
-		view_width = (fp16::integer(screen_width) / view_scale).integer_part();
-		view_height = (fp16::integer(screen_height) / view_scale).integer_part();
-		view_scale = (ufp16::integer(screen_width) / view_width).as_signed();
-		window_surface.reset();
-		indexed_surface.reset();
-		rgba_surface.reset();
+	void resize(int2 size) {
+
+		draw_size = size;
+		view.size = draw_size;
+
+		if (wnd)
+			wnd->update_surface();
+
+		rgba_surface = bwgame::resize(rgba_surface, draw_size);
+		indexed_surface = bwgame::resize(indexed_surface, draw_size);
 	}
 
 	a_vector<unit_id> current_selection;
@@ -1666,9 +1567,11 @@ struct ui_functions: ui_util_functions {
 	}
 
 	void current_selection_add(unit_t* u) {
+
 		auto uid = get_unit_id(u);
-		if (std::find(current_selection.begin(), current_selection.end(), uid) != current_selection.end()) return;
+		if (current_selection.size() == 12 || std::find(current_selection.begin(), current_selection.end(), uid) != current_selection.end()) return;
 		current_selection.push_back(uid);
+		temp_selected_unit_buffer.push_back(u);
 	}
 
 	void current_selection_clear() {
@@ -1678,7 +1581,10 @@ struct ui_functions: ui_util_functions {
 	void current_selection_remove(const unit_t* u) {
 		auto uid = get_unit_id(u);
 		auto i = std::find(current_selection.begin(), current_selection.end(), uid);
-		if (i != current_selection.end()) current_selection.erase(i);
+		if (i != current_selection.end())
+		{
+			current_selection.erase(i);
+		}
 	}
 
 	bool is_moving_minimap = false;
@@ -1686,11 +1592,10 @@ struct ui_functions: ui_util_functions {
 	bool is_paused = false;
 	bool is_drag_selecting = false;
 	bool is_dragging_screen = false;
-	int drag_select_from_x = 0;
-	int drag_select_from_y = 0;
-	int drag_select_to_x = 0;
-	int drag_select_to_y = 0;
-	xy drag_screen_pos;
+	sprt::range<int2> drag_select{};
+	int2 drag_screen_pos;
+
+	std::vector<unit_t*> temp_selected_unit_buffer;
 
 	void update() {
 		auto now = clock.now();
@@ -1705,55 +1610,65 @@ struct ui_functions: ui_util_functions {
 		auto minimap_area = get_minimap_area();
 		auto replay_slider_area = get_replay_slider_area();
 
-		auto move_minimap = [&](int mouse_x, int mouse_y) {
-			if (mouse_x < minimap_area.from.x) mouse_x = minimap_area.from.x;
-			else if (mouse_x >= minimap_area.to.x) mouse_x = minimap_area.to.x - 1;
-			if (mouse_y < minimap_area.from.y) mouse_y = minimap_area.from.y;
-			else if (mouse_y >= minimap_area.to.y) mouse_y = minimap_area.to.y - 1;
-			int x = mouse_x - minimap_area.from.x;
-			int y = mouse_y - minimap_area.from.y;
-			x = x * game_st.map_tile_width / (minimap_area.to.x - minimap_area.from.x);
-			y = y * game_st.map_tile_height / (minimap_area.to.y - minimap_area.from.y);
-			screen_pos = xy(32 * x - view_width / 2, 32 * y - view_height / 2);
+		auto move_minimap = [&](int2 position) {
+
+			// this is some kind of a generic thing, like get local coordinate in range
+			auto minimap_valid_positions = minimap_area;
+			minimap_valid_positions.size -= 1;
+			// NOTE: wow, range clamp/intersect is really unwieldy with implicit conversion :/
+			simple::support::clamp_in_place<int2, int2>(position, minimap_valid_positions);
+			position = position - minimap_area.position;
+
+			auto tile_size = int2(game_st.map_tile_width, game_st.map_tile_height);
+			position = position * tile_size / minimap_area.size;
+			view.position = 32 * position - view.size / 2;
 		};
 
 		auto check_move_minimap = [&](auto& e) {
-			if (e.mouse_x >= minimap_area.from.x && e.mouse_x < minimap_area.to.x) {
-				if (e.mouse_y >= minimap_area.from.y && e.mouse_y < minimap_area.to.y) {
-					is_moving_minimap = true;
-					move_minimap(e.mouse_x, e.mouse_y);
-				}
+			if(simple::support::intersects_lower<int2>(minimap_area, e.data.position))
+			{
+				is_moving_minimap = true;
+				move_minimap(e.data.position);
 			}
 		};
 
-		auto move_replay_slider = [&](int mouse_x, int mouse_y) {
-			(void)mouse_y;
-			int x = mouse_x - replay_slider_area.from.x;
+		auto move_replay_slider = [&](int2 position) {
+			int x = position.x() - replay_slider_area.position.x();
 			int button_w = 16;
 			x -= button_w / 2;
-			int ow = (replay_slider_area.to.x - replay_slider_area.from.x) - button_w;
+			int ow = replay_slider_area.size.x() - button_w;
 			if (x < 0) x = 0;
 			if (x >= ow) x = ow - 1;
 			replay_frame = x * replay_st.end_frame / ow;
 		};
 
 		auto check_move_replay_slider = [&](auto& e) {
-			if (e.mouse_x >= replay_slider_area.from.x && e.mouse_x < replay_slider_area.to.x) {
-				if (e.mouse_y >= replay_slider_area.from.y && e.mouse_y < replay_slider_area.to.y) {
-					is_moving_replay_slider = true;
-					move_replay_slider(e.mouse_x, e.mouse_y);
-				}
+			if(simple::support::intersects_lower<int2>(replay_slider_area, e.data.position))
+			{
+				is_moving_replay_slider = true;
+				move_replay_slider(e.data.position);
 			}
 		};
 
 		auto end_drag_select = [&](bool double_clicked) {
-			bool shift = wnd.get_key_state(225) || wnd.get_key_state(229);
-			if (drag_select_from_x > drag_select_to_x) std::swap(drag_select_from_x, drag_select_to_x);
-			if (drag_select_from_y > drag_select_to_y) std::swap(drag_select_from_y, drag_select_to_y);
-			if (drag_select_to_x - drag_select_from_x <= 4 || drag_select_to_y - drag_select_from_y <= 4) {
-				unit_t* u = select_get_unit_at(screen_pos + xy(drag_select_from_x, drag_select_from_y));
+			if(user_input)
+			{
+				user_input->select(drag_select, double_clicked);
+				is_drag_selecting = false;
+				return;
+			}
+
+			using namespace simple::interactive;
+			bool shift = pressed(scancode::lshift) || pressed(scancode::rshift);
+			bool ctrl = pressed(scancode::lctrl) || pressed(scancode::rctrl);
+
+			drag_select.fix();
+
+			auto small_box = not(drag_select.upper() - drag_select.lower() > int2::one(4));
+
+			if (small_box) {
+				unit_t* u = select_get_unit_at(to_xy(view.position + drag_select.lower()));
 				if (u) {
-					bool ctrl = wnd.get_key_state(224) || wnd.get_key_state(228);
 					if (double_clicked || ctrl) {
 						if (!shift) current_selection_clear();
 						auto is_tank = [&](unit_t* a) {
@@ -1764,7 +1679,7 @@ struct ui_functions: ui_util_functions {
 							if (is_tank(a) && is_tank(b)) return true;
 							return a->unit_type == b->unit_type;
 						};
-						for (unit_t* u2 : find_units({screen_pos, screen_pos + xy(view_width, view_height)})) {
+						for (unit_t* u2 : find_units(to_rect(view))) {
 							if (u2->owner != u->owner) continue;
 							if (!is_same_type(u, u2)) continue;
 							current_selection_add(u2);
@@ -1781,12 +1696,9 @@ struct ui_functions: ui_util_functions {
 				}
 			} else {
 				if (!shift) current_selection_clear();
-				auto r = rect{{drag_select_from_x, drag_select_from_y}, {drag_select_to_x, drag_select_to_y}};
-				if (r.from.x > r.to.x) std::swap(r.from.x, r.to.x);
-				if (r.from.y > r.to.y) std::swap(r.from.y, r.to.y);
 				a_vector<unit_t*> new_units;
 				bool any_non_neutrals = false;
-				for (unit_t* u : find_units(translate_rect(r, screen_pos))) {
+				for (unit_t* u : find_units(to_rect(drag_select + view.position))) {
 					if (!unit_can_be_selected(u)) continue;
 					new_units.push_back(u);
 					if (u->owner != 11) any_non_neutrals = true;
@@ -1799,104 +1711,116 @@ struct ui_functions: ui_util_functions {
 			is_drag_selecting = false;
 		};
 
+		using namespace simple::interactive;
 		if (wnd) {
-			native_window::event_t e;
-			while (wnd.peek_message(e)) {
-				switch (e.type) {
-				case native_window::event_t::type_quit:
-					if (exit_on_close) std::exit(0);
-					else window_closed = true;
-					break;
-				case native_window::event_t::type_resize:
-					resize(e.width, e.height);
-					break;
-				case native_window::event_t::type_mouse_button_down:
-					if (e.button == 1) {
-						check_move_minimap(e);
-						check_move_replay_slider(e);
-						if (!is_moving_minimap && !is_moving_replay_slider) {
-							is_drag_selecting = true;
-							drag_select_from_x = e.mouse_x;
-							drag_select_from_y = e.mouse_y;
-							drag_select_to_x = e.mouse_x;
-							drag_select_to_y = e.mouse_y;
+			while (auto e = next_event())
+			{
+				std::visit( simple::support::overloaded
+				{
+					[&](quit_request)
+					{
+						if (exit_on_close) std::exit(0);
+						else window_closed = true;
+					},
+					[&](const window_resized& e)
+					{
+						resize(e.data.value);
+					},
+					[&](const mouse_down& e)
+					{
+						switch(e.data.button)
+						{
+						case mouse_button::left:
+							check_move_minimap(e);
+							check_move_replay_slider(e);
+							if (!is_moving_minimap && !is_moving_replay_slider) {
+								is_drag_selecting = true;
+								drag_select.lower() = e.data.position;
+								drag_select.upper() = e.data.position;
+							}
+						break;
+						case mouse_button::right:
+							if(!user_input)
+							{
+								is_dragging_screen = true;
+								drag_screen_pos = view.position + e.data.position;
+							}
+						break;
+						default:;
 						}
-					} else if (e.button == 3) {
-						is_dragging_screen = true;
-						drag_screen_pos = screen_pos + xy((fp16::integer(e.mouse_x) / view_scale).integer_part(), (fp16::integer(e.mouse_y) / view_scale).integer_part());
-					}
-					break;
-				case native_window::event_t::type_mouse_motion:
-					if (e.button_state & 1) {
-						if (is_moving_minimap) check_move_minimap(e);
-						if (is_moving_replay_slider) check_move_replay_slider(e);
-						if (is_drag_selecting) {
-							drag_select_to_x = e.mouse_x;
-							drag_select_to_y = e.mouse_y;
+					},
+					[&](const mouse_motion& e)
+					{
+						if (e.data.button_state && mouse_button_mask::left) {
+							if (is_moving_minimap) check_move_minimap(e);
+							if (is_moving_replay_slider) check_move_replay_slider(e);
+							if (is_drag_selecting) {
+								drag_select.upper() = e.data.position;
+							}
+						} else if (e.data.button_state && mouse_button_mask::right) {
+							if (is_dragging_screen) {
+								view.position = drag_screen_pos - e.data.position;
+								//view.position -= xy((fp16::integer(e.mouse_x - drag_screen_x)).integer_part(), (fp16::integer(e.mouse_y - drag_screen_y)).integer_part());
+							}
 						}
-					} else if (e.button_state & 4) {
-						if (is_dragging_screen) {
-							screen_pos = drag_screen_pos - xy((fp16::integer(e.mouse_x) / view_scale).integer_part(), (fp16::integer(e.mouse_y) / view_scale).integer_part());
-							//screen_pos -= xy((fp16::integer(e.mouse_x - drag_screen_x) / view_scale).integer_part(), (fp16::integer(e.mouse_y - drag_screen_y) / view_scale).integer_part());
-						}
-					}
 
-					if (is_drag_selecting && ~e.button_state & 1) end_drag_select(false);
-					break;
-				case native_window::event_t::type_mouse_button_up:
-					if (e.button == 1) {
-						if (is_moving_minimap) is_moving_minimap = false;
-						if (is_moving_replay_slider) is_moving_replay_slider = false;
-						if (is_drag_selecting) {
-							end_drag_select(e.clicks >= 2 && e.clicks % 2 == 0);
+						// weird
+						if (is_drag_selecting && !(e.data.button_state && mouse_button_mask::left)) end_drag_select(false);
+					},
+					[&](const mouse_up& e)
+					{
+						if (e.data.button == mouse_button::left) {
+							if (is_moving_minimap) is_moving_minimap = false;
+							if (is_moving_replay_slider) is_moving_replay_slider = false;
+							if (is_drag_selecting) {
+								end_drag_select(e.data.clicks >= 2 && e.data.clicks % 2 == 0);
+							}
+						} else if (e.data.button == mouse_button::right) {
+							if(!user_input)
+								is_dragging_screen = false;
 						}
-					} else if (e.button == 3) {
-						is_dragging_screen = false;
-					}
-					break;
-				case native_window::event_t::type_key_down:
-					//if (e.sym == 'q') {
-					//	use_new_images = !use_new_images;
-					//}
+					},
+					[&](const key_pressed& e)
+					{
+
+						//if (e.sym == 'q') {
+						//	use_new_images = !use_new_images;
+						//}
 #ifndef EMSCRIPTEN
-					if (e.sym == ' ' || e.sym == 'p') {
-						is_paused = !is_paused;
-					}
-					if (e.sym == 'a' || e.sym == 'u') {
-						if (game_speed < fp8::integer(128)) game_speed *= 2;
-					}
-					if (e.sym == 'z' || e.sym == 'd') {
-						if (game_speed > 2_fp8) game_speed /= 2;
-					}
-					if (e.sym == '\b') {
-						int t = 5 * 42 / 1000;
-						if (replay_frame < t) replay_frame = 0;
-						else replay_frame -= t;
-					}
+						switch(e.data.keycode)
+						{
+							case keycode::space:
+							case keycode::p:
+								is_paused = !is_paused;
+							break;
+
+							case keycode::a:
+							case keycode::u:
+								if (game_speed < fp8::integer(128)) game_speed *= 2;
+							break;
+
+							case keycode::z:
+							case keycode::d:
+								if (game_speed > 2_fp8) game_speed /= 2;
+							break;
+
+							case keycode::backspace:
+							{
+								int t = 5 * 42 / 1000;
+								if (replay_frame < t) replay_frame = 0;
+								else replay_frame -= t;
+							}
+							break;
+
+							default:;
+						}
 #endif
-					break;
-				}
-			}
-		}
+					},
+					[](auto){}
+				}, *e);
 
-		if (!indexed_surface) {
-			if (wnd) {
-				window_surface = native_window_drawing::get_window_surface(&wnd);
-				rgba_surface = native_window_drawing::create_rgba_surface(window_surface->w, window_surface->h);
-			} else {
-				rgba_surface = native_window_drawing::create_rgba_surface(screen_width, screen_height);
-			}
-			indexed_surface = native_window_drawing::convert_to_8_bit_indexed(&*rgba_surface);
-			if (!palette) set_image_data();
-			indexed_surface->set_palette(palette);
-
-			indexed_surface->set_blend_mode(native_window_drawing::blend_mode::none);
-			rgba_surface->set_blend_mode(native_window_drawing::blend_mode::none);
-			rgba_surface->set_alpha(0);
-
-			if (window_surface) {
-				window_surface->set_blend_mode(native_window_drawing::blend_mode::none);
-				window_surface->set_alpha(0);
+				if(user_input)
+					user_input->handle_event(*e);
 			}
 		}
 
@@ -1911,12 +1835,12 @@ struct ui_functions: ui_util_functions {
 
 				if (!is_drag_selecting) {
 					int scroll_speed = scroll_speeds[scroll_speed_n];
-					auto prev_screen_pos = screen_pos;
-					if (wnd.get_key_state(81)) screen_pos.y += scroll_speed;
-					else if (wnd.get_key_state(82)) screen_pos.y -= scroll_speed;
-					if (wnd.get_key_state(79)) screen_pos.x += scroll_speed;
-					else if (wnd.get_key_state(80)) screen_pos.x -= scroll_speed;
-					if (screen_pos != prev_screen_pos) {
+					auto prev_screen_pos = view.position;
+					if (pressed(scancode::k)) view.position.y() += scroll_speed;
+					else if (pressed(scancode::i)) view.position.y() -= scroll_speed;
+					if (pressed(scancode::l)) view.position.x() += scroll_speed;
+					else if (pressed(scancode::j)) view.position.x() -= scroll_speed;
+					if (view.position != prev_screen_pos) {
 						if (scroll_speed_n != scroll_speeds.size() - 1) ++scroll_speed_n;
 					} else scroll_speed_n = 0;
 				}
@@ -1925,63 +1849,53 @@ struct ui_functions: ui_util_functions {
 			}
 
 			if (is_moving_minimap) {
-				int x = -1;
-				int y = -1;
-				wnd.get_cursor_pos(&x, &y);
-				if (x != -1) move_minimap(x, y);
+				move_minimap(simple::interactive::last_mouse_state().position);
 			}
 			if (is_moving_replay_slider) {
-				int x = -1;
-				int y = -1;
-				wnd.get_cursor_pos(&x, &y);
-				if (x != -1) move_replay_slider(x, y);
+				move_replay_slider(simple::interactive::last_mouse_state().position);
 			}
 		}
 
-		if (screen_pos.y + view_height > game_st.map_height) screen_pos.y = game_st.map_height - view_height;
-		if (screen_pos.y < 0) screen_pos.y = 0;
-		if (screen_pos.x + view_width > game_st.map_width) screen_pos.x = game_st.map_width - view_width;
-		if (screen_pos.x < 0) screen_pos.x = 0;
+		if (view.position.y() + view.size.y() > game_st.map_height) view.position.y() = game_st.map_height - view.size.y();
+		if (view.position.y() < 0) view.position.y() = 0;
+		if (view.position.x() + view.size.x() > game_st.map_width) view.position.x() = game_st.map_width - view.size.x();
+		if (view.position.x() < 0) view.position.x() = 0;
 
-		uint8_t* data = (uint8_t*)indexed_surface->lock();
-		draw_tiles(data, indexed_surface->pitch);
-		draw_sprites(data, indexed_surface->pitch);
+		auto indexed_pixels = std::get<pixel_writer>(indexed_surface.pixels());
+		auto data = indexed_pixels.row();
+		draw_tiles(data, indexed_pixels.pitch());
+		draw_sprites(data, indexed_pixels.pitch());
 
-		draw_callback(data, indexed_surface->pitch);
+		draw_callback(data, indexed_pixels.pitch());
 
 		if (draw_ui_elements) {
-			draw_minimap(data, indexed_surface->pitch);
-			draw_ui(data, indexed_surface->pitch);
+			draw_minimap(indexed_pixels);
+			draw_ui(indexed_pixels);
+			if(user_input)
+				user_input->draw(indexed_pixels);
 		}
-		indexed_surface->unlock();
 
-		rgba_surface->fill(0, 0, 0, 255);
-		indexed_surface->blit(&*rgba_surface, 0, 0);
+		fill(rgba_surface,rgba_surface.format().color(rgba_pixel::white(0)));
+		blit(indexed_surface, rgba_surface);
 
 		draw_image_queue();
 
 		if (is_drag_selecting) {
-			uint32_t* data = (uint32_t*)rgba_surface->lock();
+			auto rgba_pixels = std::get<pixel_writer_rgba>(rgba_surface.pixels());
 			if (is_drag_selecting) {
-				auto r = rect{{drag_select_from_x, drag_select_from_y}, {drag_select_to_x, drag_select_to_y}};
-				if (r.from.x > r.to.x) std::swap(r.from.x, r.to.x);
-				if (r.from.y > r.to.y) std::swap(r.from.y, r.to.y);
-
-				line_rectangle_rgba(data, rgba_surface->pitch / 4, r, 0xff18fc10);
+				line_rectangle_rgba(rgba_pixels, drag_select.fixed(), 0x10fc18ff_rgba);
 			}
-			rgba_surface->unlock();
 		}
 
 		if (wnd) {
-			rgba_surface->blit(&*window_surface, 0, 0);
-			wnd.update_surface();
+			blit(rgba_surface, wnd->surface());
+			wnd->update();
 		}
 	}
 
 	std::tuple<int, int, uint32_t*> get_rgba_buffer() {
-		void* r = rgba_surface->lock();
-		rgba_surface->unlock();
-		return std::make_tuple(rgba_surface->pitch / 4, rgba_surface->h, (uint32_t*)r);
+		auto rgba_pixels = std::get<pixel_writer_rgba>(rgba_surface.pixels());
+		return std::make_tuple(rgba_pixels.pitch() / 4, rgba_pixels.size().y(), (uint32_t*)rgba_pixels.row());
 	}
 
 	template<typename cb_F>
@@ -2025,19 +1939,18 @@ struct ui_functions: ui_util_functions {
 	}
 
 	void set_image_data() {
+		auto palette = *indexed_surface.format().palette();
 		tileset_img = all_tileset_img.at(game_st.tileset_index);
 
-		if (!palette) palette = native_window_drawing::new_palette();
-
-		native_window_drawing::color palette_colors[256];
 		if (tileset_img.wpe.size() != 256 * 4) error("wpe size invalid (%d)", tileset_img.wpe.size());
 		for (size_t i = 0; i != 256; ++i) {
-			palette_colors[i].r = tileset_img.wpe[4 * i + 0];
-			palette_colors[i].g = tileset_img.wpe[4 * i + 1];
-			palette_colors[i].b = tileset_img.wpe[4 * i + 2];
-			palette_colors[i].a = tileset_img.wpe[4 * i + 3];
+			palette.set_color(i, rgba_pixel(
+				tileset_img.wpe[4 * i + 0],
+				tileset_img.wpe[4 * i + 1],
+				tileset_img.wpe[4 * i + 2],
+				tileset_img.wpe[4 * i + 3]
+			));
 		}
-		palette->set_colors(palette_colors);
 	}
 
 	void reset() {

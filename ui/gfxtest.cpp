@@ -53,7 +53,7 @@ struct saved_state {
 struct main_t {
 	ui_functions ui;
 
-	main_t(game_player player) : ui(std::move(player)) {}
+	main_t(game_player player) : ui(std::move(player), int2(1280,800), true) {}
 
 	std::chrono::high_resolution_clock clock;
 	std::chrono::high_resolution_clock::time_point last_tick;
@@ -291,20 +291,6 @@ main_t* m;
 
 int current_width = -1;
 int current_height = -1;
-
-extern "C" void ui_resize(int width, int height) {
-	if (width == current_width && height == current_height) return;
-	if (width <= 0 || height <= 0) return;
-	current_width = width;
-	current_height = height;
-	if (!m) return;
-	m->ui.window_surface.reset();
-	m->ui.indexed_surface.reset();
-	m->ui.rgba_surface.reset();
-	m->ui.wnd.destroy();
-	m->ui.wnd.create("test", 0, 0, width, height);
-	m->ui.resize(width, height);
-}
 
 extern "C" double replay_get_value(int index) {
 	switch (index) {
@@ -647,11 +633,8 @@ int main() {
 	ui.load_replay_file("maps/p49.rep");
 #endif
 
-	auto& wnd = ui.wnd;
-	wnd.create("test", 0, 0, screen_width, screen_height);
-
-	ui.resize(screen_width, screen_height);
-	ui.screen_pos = {(int)ui.game_st.map_width / 2 - (int)screen_width / 2, (int)ui.game_st.map_height / 2 - (int)screen_height / 2};
+	int2 map_size(ui.game_st.map_width, ui.game_st.map_height);
+	ui.view.position = (map_size - ui.view.size)/2;
 
 	ui.set_image_data();
 

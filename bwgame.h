@@ -81,6 +81,14 @@ static const bool psi_field_mask[5][8] = {
 
 static const std::array<int, 12> all_player_slots = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
 
+inline xy_fp8 to_xy_fp8(xy position) {
+	return { fp8::integer(position.x), fp8::integer(position.y) };
+}
+inline xy to_xy(xy_fp8 position) {
+	return { (int)position.x.integer_part(), (int)position.y.integer_part() };
+}
+
+
 template<typename T>
 struct autocast {
 	T val;
@@ -1614,13 +1622,6 @@ struct state_functions {
 
 	fp8 xy_length(xy_fp8 vec) const {
 		return fp8::from_raw(xy_length({ (int)vec.x.raw_value, (int)vec.y.raw_value }));
-	}
-
-	xy_fp8 to_xy_fp8(xy position) const {
-		return { fp8::integer(position.x), fp8::integer(position.y) };
-	}
-	xy to_xy(xy_fp8 position) const {
-		return { (int)position.x.integer_part(), (int)position.y.integer_part() };
 	}
 
 	int units_distance(const unit_t* a, const unit_t* b) const {
@@ -15690,6 +15691,116 @@ struct state_functions {
 			if (predicate(u)) return u;
 		}
 		return nullptr;
+	}
+
+	uint32_t sprite_depth_order(const sprite_t* sprite) const {
+		uint32_t score = 0;
+		score |= sprite->elevation_level;
+		score <<= 13;
+		score |= sprite->elevation_level <= 4 ? sprite->position.y : 0;
+		score <<= 1;
+		score |= s_flag(sprite, sprite_t::flag_turret) ? 1 : 0;
+		return score;
+	}
+
+	bool unit_can_be_selected(const unit_t* u) const {
+		if (unit_is(u, UnitTypes::Terran_Nuclear_Missile)) return false;
+		if (unit_is(u, UnitTypes::Protoss_Scarab)) return false;
+		if (unit_is(u, UnitTypes::Spell_Disruption_Web)) return false;
+		if (unit_is(u, UnitTypes::Spell_Dark_Swarm)) return false;
+		if (unit_is(u, UnitTypes::Special_Upper_Level_Door)) return false;
+		if (unit_is(u, UnitTypes::Special_Right_Upper_Level_Door)) return false;
+		if (unit_is(u, UnitTypes::Special_Pit_Door)) return false;
+		if (unit_is(u, UnitTypes::Special_Right_Pit_Door)) return false;
+		return true;
+	}
+
+
+	rect sprite_clickable_bounds(const sprite_t* sprite) const {
+		rect r{{(int)game_st.map_width - 1, (int)game_st.map_height - 1}, {0, 0}};
+		for (const image_t* image : ptr(sprite->images)) {
+			if (!i_flag(image, image_t::flag_clickable)) continue;
+			xy pos = get_image_map_position(image);
+			auto size = image->grp->frames.at(image->frame_index).size;
+			xy to = pos + xy((int)size.x, (int)size.y);
+			if (pos.x < r.from.x) r.from.x = pos.x;
+			if (pos.y < r.from.y) r.from.y = pos.y;
+			if (to.x > r.to.x) r.to.x = to.x;
+			if (to.y > r.to.y) r.to.y = to.y;
+		}
+		return r;
+	}
+
+	bool image_has_data_at(const image_t* image, xy pos) const {
+		auto& frame = image->grp->frames.at(image->frame_index);
+		xy map_pos = get_image_map_position(image);
+		int x = pos.x - map_pos.x;
+		if (i_flag(image, image_t::flag_horizontally_flipped)) x = image->grp->width - 2 * frame.offset.x - x;
+		int y = pos.y - map_pos.y;
+		if ((size_t)x >= frame.size.x) return false;
+		if ((size_t)y >= frame.size.y) return false;
+
+		const uint8_t* d = frame.data_container.data() + frame.line_data_offset.at(y);
+		while (x > 0) {
+			int v = *d++;
+			if (v & 0x80) {
+				v &= 0x7f;
+				x -= v;
+				if (x <= 0) return false;
+			} else if (v & 0x40) {
+				v &= 0x3f;
+				d++;
+				x -= v;
+			} else {
+				x -= v;
+			}
+		}
+		return true;
+	}
+
+	bool unit_has_clickable_image_data_at(const unit_t* u, xy pos) const {
+		if (!is_in_bounds(pos, sprite_clickable_bounds(u->sprite))) return false;
+		if (ut_flag(u, unit_type_t::flag_100)) {
+			for (const image_t* image : ptr(u->sprite->images)) {
+				if (!i_flag(image, image_t::flag_clickable)) continue;
+				if (image_has_data_at(image, pos)) return true;
+			}
+			return false;
+		} else {
+			return image_has_data_at(u->sprite->main_image, pos);
+		}
+	}
+
+	unit_t* select_get_unit_at(xy pos) const {
+		rect area = square_at(pos, 32);
+		area.to += xy(game_st.max_unit_width, game_st.max_unit_height);
+		unit_t* best_unit = nullptr;
+		int best_unit_size{};
+		for (unit_t* u : find_units_noexpand(area)) {
+			if (!is_in_bounds(pos, sprite_clickable_bounds(u->sprite))) continue;
+			u = unit_main_unit(u);
+			if (!unit_can_be_selected(u)) continue;
+			if (!best_unit) {
+				best_unit = u;
+				best_unit_size = u->unit_type->placement_size.x * u->unit_type->placement_size.y;
+				continue;
+			}
+			if (sprite_depth_order(u->sprite) >= sprite_depth_order(best_unit->sprite)) {
+				if (unit_has_clickable_image_data_at(u, pos) || (u->subunit && unit_has_clickable_image_data_at(u->subunit, pos))) {
+					best_unit = u;
+					best_unit_size = u->sprite->width * u->sprite->height;
+					continue;
+				}
+			} else {
+				if (unit_has_clickable_image_data_at(best_unit, pos)) continue;
+				if (best_unit->subunit && unit_has_clickable_image_data_at(best_unit->subunit, pos)) continue;
+			}
+			if (u->unit_type->placement_size.x * u->unit_type->placement_size.y < best_unit_size) {
+				best_unit = u;
+				best_unit_size = u->unit_type->placement_size.x * u->unit_type->placement_size.y;
+			}
+		}
+		return best_unit;
 	}
 
 	template<typename F, typename i_T>

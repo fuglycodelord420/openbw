@@ -59,6 +59,26 @@ struct action_functions: state_functions {
 		return true;
 	}
 
+	bool unit_can_be_multi_selected_for(const unit_t* u, int owner) const {
+		if(u->owner != owner) return false;
+		if (ut_building(u)) return false;
+		if (ut_flag(u, (unit_type_t::flags_t)0x800)) return false;
+		if (unit_is_disabled(u)) return false;
+		auto tid = u->unit_type->id;
+		if (tid >= UnitTypes::Special_Floor_Missile_Trap && tid <= UnitTypes::Special_Right_Wall_Flame_Trap) return false;
+		if (tid == UnitTypes::Terran_Vulture_Spider_Mine) return false;
+		if (tid == UnitTypes::Zerg_Egg) return false;
+		if (tid == UnitTypes::Critter_Rhynadon) return false;
+		if (tid == UnitTypes::Critter_Bengalaas) return false;
+		if (tid == UnitTypes::Critter_Scantid) return false;
+		if (tid == UnitTypes::Critter_Kakaru) return false;
+		if (tid == UnitTypes::Critter_Ragnasaur) return false;
+		if (tid == UnitTypes::Critter_Ursadon) return false;
+		if (tid == UnitTypes::Spell_Dark_Swarm) return false;
+		if (tid == UnitTypes::Spell_Disruption_Web) return false;
+		return true;
+	}
+
 	auto selected_units(int owner) const {
 		return make_filter_range(action_st.selection.at(owner), [this](unit_t* u) {
 			return u && !unit_dead(u);
@@ -227,7 +247,7 @@ struct action_functions: state_functions {
 		}
 		return target_pos;
 	}
-	
+
 	bool morph_archon_impl(int owner, bool is_dark_archon) {
 		auto sel = selected_units(owner);
 		auto i = sel.begin();
@@ -264,23 +284,32 @@ struct action_functions: state_functions {
 		return retval;
 	}
 
-	template<typename units_T>
-	bool action_select(int owner, units_T&& units) {
-		auto& selection = action_st.selection.at(owner);
-		selection.clear();
+	template <typename SelecedRange, typename NewRange, typename OutIt>
+	bool select_units(int owner, SelecedRange&& already_selected, NewRange&& units, int available_slots, OutIt out)
+	{
 		bool retval = false;
 		for (unit_t* u : units) {
 			if (u && u->unit_type->id != UnitTypes::Terran_Nuclear_Missile) {
-				if (std::find(selection.begin(), selection.end(), u) == selection.end()) {
-					if (!us_hidden(u) && (selection.empty() || unit_can_be_multi_selected(u))) {
-						if (selection.size() == 12) error("action_select: attempt to select more than 12 units");
-						selection.push_back(u);
+				if (std::find(already_selected.begin(), already_selected.end(), u) == already_selected.end()) {
+					if (!us_hidden(u) && (available_slots == 12 || unit_can_be_multi_selected_for(u,owner))) {
+						if (available_slots == 0) error("attempt to select more than 12 units");
+						*out++ = u;
+
+						--available_slots;
 						retval = true;
 					}
 				}
 			}
 		}
 		return retval;
+	}
+
+	template<typename units_T>
+	bool action_select(int owner, units_T&& units) {
+		auto& selection = action_st.selection.at(owner);
+		selection.clear();
+		int available_slots = 12;
+		return select_units(owner, selection, units, available_slots, std::back_inserter(selection));
 	}
 
 	bool action_select(int owner, unit_t* u) {
@@ -290,20 +319,14 @@ struct action_functions: state_functions {
 	template<typename units_T>
 	bool action_shift_select(int owner, units_T&& units) {
 		auto& selection = action_st.selection.at(owner);
-		if (selection.size() + units.size() > 12) return false;
-		bool retval = false;
-		for (unit_t* u : units) {
-			if (u) {
-				if (std::find(selection.begin(), selection.end(), u) == selection.end()) {
-					if (!us_hidden(u) && (selection.empty() || unit_can_be_multi_selected(u))) {
-						if (selection.size() == 12) error("action_shift_select: attempt to select more than 12 units");
-						selection.push_back(u);
-						retval = true;
-					}
-				}
-			}
-		}
-		return retval;
+		auto already_selected = selected_units(owner);
+		int available_slots = 12 -
+			std::distance(already_selected.begin(), already_selected.end());
+
+		if(available_slots == 11 && !unit_can_be_multi_selected(*already_selected.begin()))
+			return false;
+
+		return select_units(owner, already_selected, units, available_slots, std::back_inserter(selection));
 	}
 
 	bool action_shift_select(int owner, unit_t* u) {
@@ -314,7 +337,7 @@ struct action_functions: state_functions {
 	bool action_deselect(int owner, units_T&& units) {
 		auto& selection = action_st.selection.at(owner);
 		bool retval = false;
-		for (unit_t* u : units) {
+		for (const unit_t* u : units) {
 			if (u) {
 				auto i = std::find(selection.begin(), selection.end(), u);
 				if (i != selection.end()) {
@@ -898,7 +921,7 @@ struct action_functions: state_functions {
 		}
 		return retval;
 	}
-	
+
 	bool action_burrow(int owner, bool queue) {
 		bool retval = false;
 		for (unit_t* u : selected_units(owner)) {
@@ -910,7 +933,7 @@ struct action_functions: state_functions {
 		}
 		return retval;
 	}
-	
+
 	bool action_unburrow(int owner) {
 		bool retval = false;
 		for (unit_t* u : selected_units(owner)) {
@@ -921,7 +944,7 @@ struct action_functions: state_functions {
 		}
 		return retval;
 	}
-	
+
 	bool action_cancel_morph(int owner) {
 		bool retval = false;
 		for (unit_t* u : selected_units(owner)) {
@@ -930,11 +953,11 @@ struct action_functions: state_functions {
 		}
 		return retval;
 	}
-	
+
 	bool action_morph_archon(int owner) {
 		return morph_archon_impl(owner, false);
 	}
-	
+
 	bool action_carrier_stop(int owner) {
 		bool retval = false;
 		for (unit_t* u : selected_units(owner)) {
@@ -944,7 +967,7 @@ struct action_functions: state_functions {
 		}
 		return retval;
 	}
-	
+
 	bool action_train_fighter(int owner) {
 		bool retval = false;
 		for (unit_t* u : selected_units(owner)) {
@@ -963,11 +986,11 @@ struct action_functions: state_functions {
 		}
 		return retval;
 	}
-	
+
 	bool action_morph_dark_archon(int owner) {
 		return morph_archon_impl(owner, true);
 	}
-	
+
 	bool action_reaver_stop(int owner) {
 		bool retval = false;
 		for (unit_t* u : selected_units(owner)) {
@@ -977,13 +1000,13 @@ struct action_functions: state_functions {
 		}
 		return retval;
 	}
-	
+
 	bool action_player_leave(int owner, int reason) {
 		if (reason == 6) player_dropped(owner);
 		else player_left(owner);
 		return true;
 	}
-	
+
 	bool action_cheat(int owner, int flags) {
 		if (!st.cheats_enabled) return false;
 		st.cheat_operation_cwal = (flags & 2) != 0;
@@ -1245,49 +1268,49 @@ struct action_functions: state_functions {
 		auto* unit_type = get_unit_type((UnitTypes)r.template get<uint16_t>());
 		return action_morph_building(owner, unit_type);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_burrow(int owner, reader_T&& r) {
 		bool queue = r.template get<uint8_t>() != 0;
 		return action_burrow(owner, queue);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_unburrow(int owner, reader_T&& r) {
 		r.template get<uint8_t>();
 		return action_unburrow(owner);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_cancel_morph(int owner, reader_T&& r) {
 		return action_cancel_morph(owner);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_morph_archon(int owner, reader_T&& r) {
 		return action_morph_archon(owner);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_carrier_stop(int owner, reader_T&& r) {
 		return action_carrier_stop(owner);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_train_fighter(int owner, reader_T&& r) {
 		return action_train_fighter(owner);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_morph_dark_archon(int owner, reader_T&& r) {
 		return action_morph_dark_archon(owner);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_reaver_stop(int owner, reader_T&& r) {
 		return action_reaver_stop(owner);
 	}
-	
+
 	template<typename reader_T>
 	bool read_action_cheat(int owner, reader_T&& r) {
 		int flags = r.template get<uint32_t>();
@@ -1336,12 +1359,20 @@ struct action_functions: state_functions {
 	virtual void on_action(int owner, int action) {
 	}
 
+	int get_owner_id(int player_id)
+	{
+		auto i = std::find(action_st.player_id.begin(), action_st.player_id.end(), player_id);
+		if (i == action_st.player_id.end()) return -1;
+
+		return (int)(i - action_st.player_id.begin());
+	}
+
 	template<typename reader_T>
 	bool read_action(reader_T&& r) {
 		int player_id = r.template get<uint8_t>();
-		auto i = std::find(action_st.player_id.begin(), action_st.player_id.end(), player_id);
-		if (i == action_st.player_id.end()) error("execute_action: player id %d not found", player_id);
-		int owner = (int)(i - action_st.player_id.begin());
+		int owner = get_owner_id(player_id);
+		if(owner == -1)
+			error("execute_action: player id %d not found", player_id);
 		return read_action(owner, r);
 	}
 	template<typename reader_T>
@@ -1447,7 +1478,7 @@ struct action_functions: state_functions {
 		data_loading::data_reader_le r(data, data + data_size);
 		return read_action(r);
 	}
-	
+
 	bool read_action(int owner, const uint8_t* data, size_t data_size) {
 		data_loading::data_reader_le r(data, data + data_size);
 		return read_action(owner, r);

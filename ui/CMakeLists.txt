@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/../cmake")
@@ -13,11 +13,13 @@ include_directories(
 )
 
 add_definitions(-DOPENBW_NO_SDL_IMAGE)
-add_definitions(-DOPENBW_NO_SDL_MIXER)
 
 add_definitions(-DOPENBW_ENABLE_UI)
 
-add_library(openbw_ui ./sdl2.cpp)
+add_library( openbw_ui
+	./sdl2.cpp
+	./user_input_handler.cpp
+)
 
 target_link_libraries(openbw_ui ${SDL2_LIBRARIES})
 
