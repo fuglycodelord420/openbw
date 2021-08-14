@@ -187,6 +187,15 @@ struct sync_functions: action_functions {
 
 	std::function<void(int player_slot, data_loading::data_reader_le&)> on_custom_action;
 
+	state_functions* sound_proxy = nullptr;
+	virtual void play_sound(int id, xy position, const unit_t* source_unit, bool add_race_index) override
+	{
+		if(sound_proxy)
+		{
+			sound_proxy->play_sound(id, position, source_unit, add_race_index);
+		}
+	}
+
 	template<typename action_F>
 	void execute_scheduled_actions(action_F&& action_f) {
 		for (auto i = sync_st.clients.begin(); i != sync_st.clients.end();) {
