@@ -209,40 +209,40 @@ void free_memory() {
 //	return true;
 //}
 
-struct dlmalloc_chunk {
-	size_t prev_foot;
-	size_t head;
-	dlmalloc_chunk* fd;
-	dlmalloc_chunk* bk;
-};
-
-size_t alloc_size(void* ptr) {
-	dlmalloc_chunk* c = (dlmalloc_chunk*)((char*)ptr - sizeof(size_t) * 2);
-	return c->head & ~7;
-}
-
-extern "C" void* dlmalloc(size_t);
-extern "C" void dlfree(void*);
-
-size_t max_bytes_allocated = 160 * 1024 * 1024;
-
-extern "C" void* malloc(size_t n) {
-	void* r = dlmalloc(n);
-	while (!r) {
-		printf("failed to allocate %d bytes\n", n);
-		free_memory();
-		r = dlmalloc(n);
-	}
-	bytes_allocated += alloc_size(r);
-	while (bytes_allocated > max_bytes_allocated) free_memory();
-	return r;
-}
-
-extern "C" void free(void* ptr) {
-	if (!ptr) return;
-	bytes_allocated -= alloc_size(ptr);
-	dlfree(ptr);
-}
+// struct dlmalloc_chunk {
+// 	size_t prev_foot;
+// 	size_t head;
+// 	dlmalloc_chunk* fd;
+// 	dlmalloc_chunk* bk;
+// };
+//
+// size_t alloc_size(void* ptr) {
+// 	dlmalloc_chunk* c = (dlmalloc_chunk*)((char*)ptr - sizeof(size_t) * 2);
+// 	return c->head & ~7;
+// }
+//
+// extern "C" void* dlmalloc(size_t);
+// extern "C" void dlfree(void*);
+//
+// size_t max_bytes_allocated = 160 * 1024 * 1024;
+//
+// extern "C" void* malloc(size_t n) {
+// 	void* r = dlmalloc(n);
+// 	while (!r) {
+// 		printf("failed to allocate %d bytes\n", n);
+// 		free_memory();
+// 		r = dlmalloc(n);
+// 	}
+// 	bytes_allocated += alloc_size(r);
+// 	while (bytes_allocated > max_bytes_allocated) free_memory();
+// 	return r;
+// }
+//
+// extern "C" void free(void* ptr) {
+// 	if (!ptr) return;
+// 	bytes_allocated -= alloc_size(ptr);
+// 	dlfree(ptr);
+// }
 
 #ifdef EMSCRIPTEN
 
