@@ -1,6 +1,5 @@
 # Fugly changes
 
-- new dependencies
 - Basic user input (select, right click, build SCV with S key)
 - License is now GPL3, sorry proprietary apps
 
