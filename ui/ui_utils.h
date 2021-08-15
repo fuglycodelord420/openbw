@@ -18,7 +18,7 @@ namespace bwgame
 	using pixel_writer_rgba = simple::graphical::pixel_writer<rgba_pixel, pixel_byte>;
 
 	template <typename Pixels, typename Color>
-	inline void line_range(Pixels pixels, range2 range, int line_width, Color color) // bonus line width
+	inline void line_range(Pixels pixels, range2 range, int line_width, Color color)
 	{
 		for(auto dim = int2::dimensions; dim --> 0;)
 		{
@@ -68,6 +68,7 @@ namespace bwgame
 		simple::graphical::surface ret(size, s.format());
 		ret.blend(s.blend());
 		ret.alpha(s.alpha());
+		ret.color(s.color());
 		return std::move(ret);
 	}
 
