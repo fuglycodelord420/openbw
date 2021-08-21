@@ -61,22 +61,7 @@ struct action_functions: state_functions {
 
 	bool unit_can_be_multi_selected_for(const unit_t* u, int owner) const {
 		if(u->owner != owner) return false;
-		if (ut_building(u)) return false;
-		if (ut_flag(u, (unit_type_t::flags_t)0x800)) return false;
-		if (unit_is_disabled(u)) return false;
-		auto tid = u->unit_type->id;
-		if (tid >= UnitTypes::Special_Floor_Missile_Trap && tid <= UnitTypes::Special_Right_Wall_Flame_Trap) return false;
-		if (tid == UnitTypes::Terran_Vulture_Spider_Mine) return false;
-		if (tid == UnitTypes::Zerg_Egg) return false;
-		if (tid == UnitTypes::Critter_Rhynadon) return false;
-		if (tid == UnitTypes::Critter_Bengalaas) return false;
-		if (tid == UnitTypes::Critter_Scantid) return false;
-		if (tid == UnitTypes::Critter_Kakaru) return false;
-		if (tid == UnitTypes::Critter_Ragnasaur) return false;
-		if (tid == UnitTypes::Critter_Ursadon) return false;
-		if (tid == UnitTypes::Spell_Dark_Swarm) return false;
-		if (tid == UnitTypes::Spell_Disruption_Web) return false;
-		return true;
+		return unit_can_be_multi_selected(u);
 	}
 
 	auto selected_units(int owner) const {
