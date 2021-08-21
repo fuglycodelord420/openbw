@@ -181,20 +181,140 @@ namespace sync_messages {
 	};
 }
 
-struct sync_functions: action_functions {
-	sync_state& sync_st;
-	explicit sync_functions(state& st, action_state& action_st, sync_state& sync_st) : action_functions(st, action_st), sync_st(sync_st) {}
+template<size_t max_size, bool default_little_endian = true>
+struct data_writer {
+	std::array<uint8_t, max_size> arr;
+	size_t pos = 0;
+	template<typename T, bool little_endian = default_little_endian>
+	void put(T v) {
+		static_assert(std::is_integral<T>::value, "don't know how to write this type");
+		size_t n = pos;
+		skip(sizeof(T));
+		data_loading::set_value_at<little_endian>(data() + n, v);
+	}
+	void skip(size_t n) {
+		pos += n;
+		if (pos > arr.size()) error("sync_functions::writer: attempt to write past end");
+	}
+	void put_bytes(const uint8_t* src, size_t n) {
+		skip(n);
+		memcpy(data() + pos - n, src, n);
+	}
+	size_t size() const {
+		return pos;
+	}
+	const uint8_t* data() const {
+		return arr.data();
+	}
+	uint8_t* data() {
+		return arr.data();
+	}
+};
 
-	std::function<void(int player_slot, data_loading::data_reader_le&)> on_custom_action;
-
-	state_functions* sound_proxy = nullptr;
-	virtual void play_sound(int id, xy position, const unit_t* source_unit, bool add_race_index) override
-	{
-		if(sound_proxy)
-		{
-			sound_proxy->play_sound(id, position, source_unit, add_race_index);
+template<bool default_little_endian = true>
+struct dynamic_data_writer {
+	std::vector<uint8_t> vec;
+	size_t pos = 0;
+	dynamic_data_writer() = default;
+	dynamic_data_writer(size_t initial_size) : vec(initial_size) {}
+	template<typename T, bool little_endian = default_little_endian>
+	void put(T v) {
+		static_assert(std::is_integral<T>::value, "don't know how to write this type");
+		size_t n = pos;
+		skip(sizeof(T));
+		data_loading::set_value_at<little_endian>(data() + n, v);
+	}
+	void skip(size_t n) {
+		pos += n;
+		if (pos >= vec.size()) {
+			if (vec.size() < 2048) vec.resize(std::max(pos, vec.size() + vec.size()));
+			else vec.resize(std::max(pos, std::max(vec.size() + vec.size() / 2, (size_t)32)));
 		}
 	}
+	void put_bytes(const uint8_t* src, size_t n) {
+		skip(n);
+		memcpy(data() + pos - n, src, n);
+	}
+	size_t size() const {
+		return pos;
+	}
+	const uint8_t* data() const {
+		return vec.data();
+	}
+	uint8_t* data() {
+		return vec.data();
+	}
+};
+
+template <typename Server>
+struct sync_functions;
+
+struct syncer_container_t {
+	static const size_t size = 0x40;
+	static const size_t alignment = alignof(std::max_align_t);
+	const std::type_info* type = nullptr;
+	const void* server_ptr = nullptr;
+	std::aligned_storage<size, alignment>::type obj;
+	void (syncer_container_t::* destroy_f)();
+
+	syncer_container_t() = default;
+	syncer_container_t(const syncer_container_t&) = delete;
+	syncer_container_t& operator=(const syncer_container_t&) = delete;
+	~syncer_container_t() {
+		destroy();
+	}
+
+	void destroy() {
+		if (type) (this->*destroy_f)();
+	}
+
+	template<typename T, typename server_T>
+	void construct(sync_functions<server_T>& funcs) {
+		static_assert(sizeof(T) <= size || alignof(T) <= alignment, "syncer_container_t size or alignment too small");
+		new ((T*)&obj) T(funcs);
+		type = &typeid(T);
+		server_ptr = &funcs.server;
+		destroy_f = &syncer_container_t::destroy<T>;
+	}
+	template<typename T>
+	void destroy() {
+		as<T>().~T();
+		type = nullptr;
+	}
+	template<typename T>
+	T& as() {
+		static_assert(sizeof(T) <= size || alignof(T) <= alignment, "syncer_container_t size or alignment too small");
+		return (T&)obj;
+	}
+
+	template<typename T, typename server_T>
+	T& get(sync_functions<server_T>& funcs) {
+		if (type) {
+			if (type == &typeid(T) || *type == typeid(T)) {
+				if (server_ptr == &funcs.server) return as<T>();
+			}
+			error("sync_functions::syncer_container_t: attempt to use multiple servers in the same instance");
+		}
+		construct<T>(funcs);
+		return as<T>();
+	}
+};
+
+
+template <typename Server = sync_server_noop>
+struct sync_functions: action_functions {
+
+	template <size_t MaxSize>
+	using writer = data_writer<MaxSize>;
+
+	template<bool default_little_endian = true>
+	using dynamic_writer = dynamic_data_writer<default_little_endian>;
+
+	sync_state& sync_st;
+	Server& server;
+	explicit sync_functions(state& st, action_state& action_st, sync_state& sync_st, Server& server) : action_functions(st, action_st), sync_st(sync_st), server(server) {}
+
+	std::function<void(int player_slot, data_loading::data_reader_le&)> on_custom_action;
 
 	template<typename action_F>
 	void execute_scheduled_actions(action_F&& action_f) {
@@ -213,11 +333,8 @@ struct sync_functions: action_functions {
 		}
 	}
 
-	void next_frame() = delete;
-
-	template<typename server_T>
-	void next_frame(server_T& server) {
-		sync(server);
+	void next_frame() {
+		sync();
 		action_functions::next_frame();
 	}
 
@@ -294,86 +411,20 @@ struct sync_functions: action_functions {
 		return schedule_action(client, r);
 	}
 
-	template<size_t max_size, bool default_little_endian = true>
-	struct writer {
-		std::array<uint8_t, max_size> arr;
-		size_t pos = 0;
-		template<typename T, bool little_endian = default_little_endian>
-		void put(T v) {
-			static_assert(std::is_integral<T>::value, "don't know how to write this type");
-			size_t n = pos;
-			skip(sizeof(T));
-			data_loading::set_value_at<little_endian>(data() + n, v);
-		}
-		void skip(size_t n) {
-			pos += n;
-			if (pos > arr.size()) error("sync_functions::writer: attempt to write past end");
-		}
-		void put_bytes(const uint8_t* src, size_t n) {
-			skip(n);
-			memcpy(data() + pos - n, src, n);
-		}
-		size_t size() const {
-			return pos;
-		}
-		const uint8_t* data() const {
-			return arr.data();
-		}
-		uint8_t* data() {
-			return arr.data();
-		}
-	};
 
-	template<bool default_little_endian = true>
-	struct dynamic_writer {
-		std::vector<uint8_t> vec;
-		size_t pos = 0;
-		dynamic_writer() = default;
-		dynamic_writer(size_t initial_size) : vec(initial_size) {}
-		template<typename T, bool little_endian = default_little_endian>
-		void put(T v) {
-			static_assert(std::is_integral<T>::value, "don't know how to write this type");
-			size_t n = pos;
-			skip(sizeof(T));
-			data_loading::set_value_at<little_endian>(data() + n, v);
-		}
-		void skip(size_t n) {
-			pos += n;
-			if (pos >= vec.size()) {
-				if (vec.size() < 2048) vec.resize(std::max(pos, vec.size() + vec.size()));
-				else vec.resize(std::max(pos, std::max(vec.size() + vec.size() / 2, (size_t)32)));
-			}
-		}
-		void put_bytes(const uint8_t* src, size_t n) {
-			skip(n);
-			memcpy(data() + pos - n, src, n);
-		}
-		size_t size() const {
-			return pos;
-		}
-		const uint8_t* data() const {
-			return vec.data();
-		}
-		uint8_t* data() {
-			return vec.data();
-		}
-	};
-
-	template<typename server_T>
 	struct syncer_t {
 		sync_functions& funcs;
-		server_T& server;
 		state& st;
 		sync_state& sync_st;
-		syncer_t(sync_functions& funcs, server_T& server) : funcs(funcs), server(server), st(funcs.st), sync_st(funcs.sync_st) {}
+		syncer_t(sync_functions& funcs) : funcs(funcs), st(funcs.st), sync_st(funcs.sync_st) {}
 
 		const uint32_t greeting_value = 0x39e25069;
 
 		void send(const uint8_t* data, size_t size, const void* h = nullptr) {
 			if (size == 0) error("attempt to send no data");
-			auto d = server.new_message();
+			auto d = funcs.server.new_message();
 			d.put(data, size);
-			server.send_message(d, h);
+			funcs.server.send_message(d, h);
 			if (!h || h == sync_st.local_client) recv(sync_st.local_client, data, size);
 		}
 		template<typename data_T>
@@ -424,7 +475,7 @@ struct sync_functions: action_functions {
 						}
 						sync_st.sync_frame = 0;
 						if (client->h) {
-							server.allow_send(client->h, true);
+							funcs.server.allow_send(client->h, true);
 						}
 
 						sync_st.clients.sort([&](auto& a, auto& b) {
@@ -449,10 +500,10 @@ struct sync_functions: action_functions {
 		}
 
 		void send_greeting(const void* h) {
-			auto d = server.new_message();
+			auto d = funcs.server.new_message();
 			d.template put<uint32_t>(greeting_value);
 			d.template put<uint8_t>(sync_st.sync_frame);
-			server.send_message(d, h);
+			funcs.server.send_message(d, h);
 		}
 
 		sync_state::client_t* get_client(const sync_state::uid_t& uid) {
@@ -483,7 +534,7 @@ struct sync_functions: action_functions {
 				client->player_slot = -1;
 			}
 			if (client == sync_st.local_client) error("attempt to kill local client");
-			if (client->h) server.kill_client(client->h);
+			if (client->h) funcs.server.kill_client(client->h);
 			for (auto i = sync_st.clients.begin(); i != sync_st.clients.end(); ++i) {
 				if (&*i == client) {
 					sync_st.clients.erase(i);
@@ -587,7 +638,7 @@ struct sync_functions: action_functions {
 
 		void on_new_client(const void* h) {
 			if (sync_st.game_started || sync_st.game_starting_countdown) {
-				server.kill_client(h);
+				funcs.server.kill_client(h);
 				return;
 			}
 			auto* c = new_client(h);
@@ -596,9 +647,9 @@ struct sync_functions: action_functions {
 			auto frame = sync_st.sync_frame;
 			sync_st.sync_frame = 0;
 			sync_st.sync_frame = frame;
-			server.allow_send(h, false);
-			server.set_on_message(h, std::bind(&syncer_t::on_message, this, c, std::placeholders::_1, std::placeholders::_2));
-			server.set_on_kill(h, std::bind(&syncer_t::kill_client, this, c, false));
+			funcs.server.allow_send(h, false);
+			funcs.server.set_on_message(h, std::bind(&syncer_t::on_message, this, c, std::placeholders::_1, std::placeholders::_2));
+			funcs.server.set_on_kill(h, std::bind(&syncer_t::kill_client, this, c, false));
 		}
 		void on_message(sync_state::client_t* client, const void* data, size_t size) {
 			data_loading::data_reader_le r((const uint8_t*)data, (const uint8_t*)data + size);
@@ -628,7 +679,7 @@ struct sync_functions: action_functions {
 					}
 				}
 			}
-			server.set_timeout(std::chrono::seconds(1), std::bind(&syncer_t::timeout_func, this));
+			funcs.server.set_timeout(std::chrono::seconds(1), std::bind(&syncer_t::timeout_func, this));
 		}
 
 		void update_insync_hash() {
@@ -967,8 +1018,8 @@ struct sync_functions: action_functions {
 		void sync() {
 			sync_next_frame();
 
-			server.set_timeout(std::chrono::seconds(1), std::bind(&syncer_t::timeout_func, this));
-			server.poll(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
+			funcs.server.set_timeout(std::chrono::seconds(1), std::bind(&syncer_t::timeout_func, this));
+			funcs.server.poll(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
 
 			auto pred = [this]() {
 				return all_clients_in_sync();
@@ -982,18 +1033,18 @@ struct sync_functions: action_functions {
 					return false;
 				};
 				bool timed_out = false;
-				server.set_timeout(std::chrono::milliseconds(50), [&]{
+				funcs.server.set_timeout(std::chrono::milliseconds(50), [&]{
 					timed_out = true;
 				});
 				while (!any_scheduled_actions() && !timed_out) {
-					server.run_one(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
+					funcs.server.run_one(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
 				}
 				if (!pred()) {
-					server.set_timeout(std::chrono::seconds(1), std::bind(&syncer_t::timeout_func, this));
-					server.run_until(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1), pred);
+					funcs.server.set_timeout(std::chrono::seconds(1), std::bind(&syncer_t::timeout_func, this));
+					funcs.server.run_until(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1), pred);
 				}
 			} else {
-				server.run_until(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1), pred);
+				funcs.server.run_until(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1), pred);
 			}
 
 			auto now = std::chrono::steady_clock::now();
@@ -1006,14 +1057,14 @@ struct sync_functions: action_functions {
 
 		void final_sync() {
 			bool timed_out = false;
-			server.set_timeout(std::chrono::milliseconds(250), [&]{
+			funcs.server.set_timeout(std::chrono::milliseconds(250), [&]{
 				timed_out = true;
 			});
 			while (!sync_st.local_client->scheduled_actions.empty() && !timed_out) {
 				sync_next_frame();
-				server.poll(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
+				funcs.server.poll(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
 				while (!all_clients_in_sync() && !timed_out) {
-					server.run_one(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
+					funcs.server.run_one(std::bind(&syncer_t::on_new_client, this, std::placeholders::_1));
 				}
 				if (!timed_out) process_messages();
 			}
@@ -1025,78 +1076,23 @@ struct sync_functions: action_functions {
 		}
 	};
 
-	struct syncer_container_t {
-		static const size_t size = 0x40;
-		static const size_t alignment = alignof(std::max_align_t);
-		const std::type_info* type = nullptr;
-		const void* server_ptr = nullptr;
-		std::aligned_storage<size, alignment>::type obj;
-		void (syncer_container_t::* destroy_f)();
-
-		syncer_container_t() = default;
-		syncer_container_t(const syncer_container_t&) = delete;
-		syncer_container_t& operator=(const syncer_container_t&) = delete;
-		~syncer_container_t() {
-			destroy();
-		}
-
-		void destroy() {
-			if (type) (this->*destroy_f)();
-		}
-
-		template<typename T, typename server_T>
-		void construct(sync_functions& funcs, server_T& server) {
-			static_assert(sizeof(T) <= size || alignof(T) <= alignment, "syncer_container_t size or alignment too small");
-			new ((T*)&obj) T(funcs, server);
-			type = &typeid(T);
-			server_ptr = &server;
-			destroy_f = &syncer_container_t::destroy<T>;
-		}
-		template<typename T>
-		void destroy() {
-			as<T>().~T();
-			type = nullptr;
-		}
-		template<typename T>
-		T& as() {
-			static_assert(sizeof(T) <= size || alignof(T) <= alignment, "syncer_container_t size or alignment too small");
-			return (T&)obj;
-		}
-
-		template<typename T, typename server_T>
-		T& get(sync_functions& funcs, server_T& server) {
-			if (type) {
-				if (type == &typeid(T) || *type == typeid(T)) {
-					if (server_ptr == &server) return as<T>();
-				}
-				error("sync_functions::syncer_container_t: attempt to use multiple servers in the same instance");
-			}
-			construct<T>(funcs, server);
-			return as<T>();
-		}
-	};
-
 	syncer_container_t syncer_container;
 
-	template<typename server_T>
-	syncer_t<server_T>& get_syncer(server_T& server) {
-		return syncer_container.get<syncer_t<server_T>>(*this, server);
+	syncer_t& get_syncer() {
+		return syncer_container.get<syncer_t>(*this);
 	}
 
-	template<typename server_T>
-	void sync(server_T& server) {
-		get_syncer(server).sync();
+	void sync() {
+		get_syncer().sync();
 	}
 
-	template<typename server_T>
-	void start_game(server_T& server) {
+	void start_game() {
 		if (sync_st.game_started) return;
-		get_syncer(server).send_start_game();
+		get_syncer().send_start_game();
 	}
 
-	template<typename server_T>
-	void switch_to_slot(server_T& server, int n) {
-		get_syncer(server).send_switch_to_slot(n);
+	void switch_to_slot(int n) {
+		get_syncer().send_switch_to_slot(n);
 	}
 
 	void set_local_client_name(a_string name) {
@@ -1104,20 +1100,17 @@ struct sync_functions: action_functions {
 		sync_st.local_client->name = std::move(name);
 	}
 
-	template<typename server_T>
-	void set_local_client_race(server_T& server, race_t race) {
+	void set_local_client_race(race_t race) {
 		if (sync_st.game_started) return;
-		get_syncer(server).send_set_race(race);
+		get_syncer().send_set_race(race);
 	}
 
-	template<typename server_T>
-	void input_action(server_T& server, const uint8_t* data, size_t size) {
-		get_syncer(server).send(data, size);
+	void input_action(const uint8_t* data, size_t size) {
+		get_syncer().send(data, size);
 	}
 
-	template<typename server_T>
-	void leave_game(server_T& server) {
-		get_syncer(server).leave_game();
+	void leave_game() {
+		get_syncer().leave_game();
 	}
 
 	int connected_player_count() {
@@ -1128,24 +1121,20 @@ struct sync_functions: action_functions {
 		return clients_with_uid;
 	}
 
-	template<typename server_T>
-	void create_unit(server_T& server, const unit_type_t* unit_type, xy pos, int owner) {
-		get_syncer(server).send_create_unit(unit_type, pos, owner);
+	void create_unit(const unit_type_t* unit_type, xy pos, int owner) {
+		get_syncer().send_create_unit(unit_type, pos, owner);
 	}
 
-	template<typename server_T>
-	void kill_unit(server_T& server, unit_t* u) {
-		get_syncer(server).send_kill_unit(u);
+	void kill_unit(unit_t* u) {
+		get_syncer().send_kill_unit(u);
 	}
 
-	template<typename server_T>
-	void remove_unit(server_T& server, unit_t* u) {
-		get_syncer(server).send_remove_unit(u);
+	void remove_unit(unit_t* u) {
+		get_syncer().send_remove_unit(u);
 	}
 
-	template<typename server_T>
-	void send_custom_action(server_T& server, const void* data, size_t size) {
-		get_syncer(server).send_custom_action((const uint8_t*)data, size);
+	void send_custom_action(const void* data, size_t size) {
+		get_syncer().send_custom_action((const uint8_t*)data, size);
 	}
 
 };

@@ -339,7 +339,15 @@ struct state : state_base_copyable, state_base_non_copyable {
 
 struct state_functions {
 
-	virtual void play_sound(int id, xy position, const unit_t* source_unit = nullptr, bool add_race_index = false) {}
+	state_functions* sound_proxy = nullptr;
+	virtual void play_sound(int id, xy position, const unit_t* source_unit = nullptr, bool add_race_index = false)
+	{
+		if(sound_proxy)
+		{
+			sound_proxy->play_sound(id, position, source_unit, add_race_index);
+		}
+	}
+
 	virtual void on_unit_deselect(unit_t* u) {}
 
 	virtual void on_unit_destroy(unit_t* u) {}
