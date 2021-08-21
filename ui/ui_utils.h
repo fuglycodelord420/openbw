@@ -9,6 +9,14 @@
 namespace bwgame
 {
 
+	using namespace simple::graphical::color_literals;
+
+	struct rgba_color
+	{
+		static constexpr auto green = 0x10fc18ff_rgba;
+		static constexpr auto red = 0xfc1018ff_rgba;
+	};
+
 	using simple::graphical::int2;
 	using simple::graphical::pixel_byte;
 	using simple::graphical::rgba_pixel;

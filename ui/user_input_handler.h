@@ -16,7 +16,8 @@ namespace bwgame
 {
 	namespace sprt = simple::support;
 
-	inline xy to_xy(int2 v) { return {v.x(), v.y()}; }
+	template <typename T = int>
+	inline xy_t<T> to_xy(int2 v) { return {T(v.x()), T(v.y())}; }
 	inline rect to_rect(sprt::range<int2> v)
 	{
 		return
@@ -43,6 +44,10 @@ namespace bwgame
 		action_functions& actions;
 		const simple::geom::segment<int2>& view;
 
+		const unit_type_t* building;
+		bool build_mode;
+		int2 building_tile_position;
+
 		std::vector<unit_t*> selection_buffer;
 
 		user_input_handler
@@ -61,7 +66,9 @@ namespace bwgame
 		void handle_event(const simple::interactive::event&);
 		void key_up(const simple::interactive::key_released&);
 
-		void draw(pixel_writer) const;
+		bool left_click(const simple::interactive::mouse_down&);
+
+		void draw(pixel_writer_rgba);
 
 	};
 

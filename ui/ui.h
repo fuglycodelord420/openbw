@@ -1731,13 +1731,16 @@ struct ui_functions: ui_util_functions {
 						switch(e.data.button)
 						{
 						case mouse_button::left:
+						{
 							check_move_minimap(e);
 							check_move_replay_slider(e);
-							if (!is_moving_minimap && !is_moving_replay_slider) {
+							auto user_input_click = user_input && user_input->left_click(e);
+							if (!is_moving_minimap && !is_moving_replay_slider && !user_input_click) {
 								is_drag_selecting = true;
 								drag_select.lower() = e.data.position;
 								drag_select.upper() = e.data.position;
 							}
+						}
 						break;
 						case mouse_button::right:
 							if(!user_input)
@@ -1871,8 +1874,6 @@ struct ui_functions: ui_util_functions {
 		if (draw_ui_elements) {
 			draw_minimap(indexed_pixels);
 			draw_ui(indexed_pixels);
-			if(user_input)
-				user_input->draw(indexed_pixels);
 		}
 
 		fill(rgba_surface,rgba_surface.format().color(rgba_pixel::white(0)));
@@ -1880,12 +1881,16 @@ struct ui_functions: ui_util_functions {
 
 		draw_image_queue();
 
+		auto rgba_pixels = std::get<pixel_writer_rgba>(rgba_surface.pixels());
+
 		if (is_drag_selecting) {
-			auto rgba_pixels = std::get<pixel_writer_rgba>(rgba_surface.pixels());
 			if (is_drag_selecting) {
 				line_rectangle_rgba(rgba_pixels, drag_select.fixed(), 0x10fc18ff_rgba);
 			}
 		}
+
+		if(user_input)
+			user_input->draw(rgba_pixels);
 
 		if (wnd) {
 			blit(rgba_surface, wnd->surface());
