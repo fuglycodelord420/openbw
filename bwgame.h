@@ -337,6 +337,70 @@ struct state_base_non_copyable {
 struct state : state_base_copyable, state_base_non_copyable {
 };
 
+inline bool unit_dead(const unit_t* u) {
+	if (!u->order_type) return true;
+	return u->order_type->id == Orders::Die && u->order_state == 1;
+}
+
+inline unit_id get_unit_id(const unit_t* u) {
+	if (!u) return unit_id{};
+	return unit_id(u->index + 1, u->unit_id_generation % (1u << 5));
+}
+
+inline unit_t* get_unit(state& st, size_t index) {
+	unit_t* u = st.units_container.try_get(index);
+	if (!u) return nullptr;
+	if (unit_dead(u)) return nullptr;
+	return u;
+}
+
+template<typename T>
+unit_t* get_unit(state& st, unit_id_t<T> id) {
+	size_t idx = id.index();
+	if (!idx) return nullptr;
+	unit_t* u = get_unit(st, idx - 1);
+	if (!u) return nullptr;
+	if (u->unit_id_generation % (1u << (int_bits<T>::value - 11)) != id.generation()) return nullptr;
+	return u;
+}
+
+inline const unit_type_t* get_unit_type(const state& st, UnitTypes id) {
+	if (id == UnitTypes::None) return nullptr;
+	if (id > UnitTypes::None) error("invalid unit id %d", (size_t)id);
+	return &st.game->unit_types.vec[(size_t)id];
+}
+// wth we (size_t)id when underlying type is int -_-
+// wth we hard code magic numbers when we got None value -__-
+inline const image_type_t* get_image_type(const state& st, ImageTypes id) {
+	if ((size_t)id >= 999) error("invalid image id %d", (size_t)id);
+	return &st.global->image_types.vec[(size_t)id];
+}
+inline const weapon_type_t* get_weapon_type(const state& st, WeaponTypes id) {
+	if ((size_t)id >= 130) error("invalid weapon id %d", (size_t)id);
+	return &st.game->weapon_types.vec[(size_t)id];
+}
+inline const sprite_type_t* get_sprite_type(const state& st, SpriteTypes id) {
+	if ((size_t)id >= 517) error("invalid sprite id %d", (size_t)id);
+	return &st.global->sprite_types.vec[(size_t)id];
+}
+inline const upgrade_type_t* get_upgrade_type(const state& st, UpgradeTypes id) {
+	if ((size_t)id >= 61) error("invalid upgrade id %d", (size_t)id);
+	return &st.game->upgrade_types.vec[(size_t)id];
+}
+inline const tech_type_t* get_tech_type(const state& st, TechTypes id) {
+	if ((size_t)id >= 44) error("invalid tech id %d", (size_t)id);
+	return &st.game->tech_types.vec[(size_t)id];
+}
+inline const flingy_type_t* get_flingy_type(const state& st, FlingyTypes id) {
+	if ((size_t)id >= 209) error("invalid flingy id %d", (size_t)id);
+	return &st.global->flingy_types.vec[(size_t)id];
+}
+inline const order_type_t* get_order_type(const state& st, Orders id) {
+	if ((size_t)id >= 189) error("invalid order id %d", (size_t)id);
+	return &st.global->order_types.vec[(size_t)id];
+}
+
+
 struct state_functions {
 
 	state_functions* sound_proxy = nullptr;
@@ -373,8 +437,7 @@ struct state_functions {
 	mutable size_t unit_finder_search_index = 0;
 
 	const order_type_t* get_order_type(Orders id) const {
-		if ((size_t)id >= 189) error("invalid order id %d", (size_t)id);
-		return &global_st.order_types.vec[(size_t)id];
+		return bwgame::get_order_type(st, id);
 	}
 
 	template<typename T>
@@ -603,32 +666,25 @@ struct state_functions {
 	}
 
 	const unit_type_t* get_unit_type(UnitTypes id) const {
-		if ((size_t)id >= 228) error("invalid unit id %d", (size_t)id);
-		return &game_st.unit_types.vec[(size_t)id];
+		return bwgame::get_unit_type(st, id);
 	}
 	const image_type_t* get_image_type(ImageTypes id) const {
-		if ((size_t)id >= 999) error("invalid image id %d", (size_t)id);
-		return &global_st.image_types.vec[(size_t)id];
+		return bwgame::get_image_type(st, id);
 	}
 	const weapon_type_t* get_weapon_type(WeaponTypes id) const {
-		if ((size_t)id >= 130) error("invalid weapon id %d", (size_t)id);
-		return &game_st.weapon_types.vec[(size_t)id];
+		return bwgame::get_weapon_type(st, id);
 	}
 	const sprite_type_t* get_sprite_type(SpriteTypes id) const {
-		if ((size_t)id >= 517) error("invalid sprite id %d", (size_t)id);
-		return &global_st.sprite_types.vec[(size_t)id];
+		return bwgame::get_sprite_type(st, id);
 	}
 	const upgrade_type_t* get_upgrade_type(UpgradeTypes id) const {
-		if ((size_t)id >= 61) error("invalid upgrade id %d", (size_t)id);
-		return &game_st.upgrade_types.vec[(size_t)id];
+		return bwgame::get_upgrade_type(st, id);
 	}
 	const tech_type_t* get_tech_type(TechTypes id) const {
-		if ((size_t)id >= 44) error("invalid tech id %d", (size_t)id);
-		return &game_st.tech_types.vec[(size_t)id];
+		return bwgame::get_tech_type(st, id);
 	}
 	const flingy_type_t* get_flingy_type(FlingyTypes id) const {
-		if ((size_t)id >= 209) error("invalid flingy id %d", (size_t)id);
-		return &global_st.flingy_types.vec[(size_t)id];
+		return bwgame::get_flingy_type(st, id);
 	}
 
 	void play_sound(int id, const unit_t* source_unit, bool add_race_index = false) {
@@ -640,25 +696,16 @@ struct state_functions {
 	}
 
 	unit_t* get_unit(size_t index) const {
-		unit_t* u = st.units_container.try_get(index);
-		if (!u) return nullptr;
-		if (unit_dead(u)) return nullptr;
-		return u;
+		return bwgame::get_unit(st, index);
 	}
 
 	template<typename T>
 	unit_t* get_unit(unit_id_t<T> id) const {
-		size_t idx = id.index();
-		if (!idx) return nullptr;
-		unit_t* u = get_unit(idx - 1);
-		if (!u) return nullptr;
-		if (u->unit_id_generation % (1u << (int_bits<T>::value - 11)) != id.generation()) return nullptr;
-		return u;
+		return bwgame::get_unit(st, id);
 	}
 
 	unit_id get_unit_id(const unit_t* u) const {
-		if (!u) return unit_id{};
-		return unit_id(u->index + 1, u->unit_id_generation % (1u << 5));
+		return bwgame::get_unit_id(u);
 	}
 
 	unit_id_32 get_unit_id_32(const unit_t* u) const {
@@ -8473,8 +8520,7 @@ struct state_functions {
 	}
 
 	bool unit_dead(const unit_t* u) const {
-		if (!u->order_type) return true;
-		return u->order_type->id == Orders::Die && u->order_state == 1;
+		return bwgame::unit_dead(u);
 	}
 
 	bool unit_dying(const unit_t* u) const {
