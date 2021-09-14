@@ -53,25 +53,72 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 	switch(key.data.scancode)
 	{
 		case scancode::s:
-			actions.action_train(owner, actions.get_unit_type(UnitTypes::Terran_SCV));
-			actions.action_train(owner, actions.get_unit_type(UnitTypes::Terran_Marine));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Terran_SCV)
+			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Terran_Marine)
+			));
 			if(build_mode)
 				building = actions.get_unit_type(UnitTypes::Terran_Supply_Depot);
 		break;
 
+		case scancode::p:
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Protoss_Probe)
+			));
+			if(build_mode)
+				building = actions.get_unit_type(UnitTypes::Protoss_Pylon);
+		break;
+
+		case scancode::d:
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Protoss_Dragoon)
+			));
+		break;
+
+		case scancode::g:
+			if(build_mode)
+				building = actions.get_unit_type(UnitTypes::Protoss_Gateway);
+		break;
+
 		case scancode::m:
-			actions.action_train(owner, actions.get_unit_type(UnitTypes::Terran_Medic));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Terran_Medic)
+			));
 			if(build_mode)
 				building = actions.get_unit_type(UnitTypes::Terran_Missile_Turret);
 		break;
 
 		case scancode::f:
-			actions.action_train(owner, actions.get_unit_type(UnitTypes::Terran_Firebat));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Terran_Firebat)
+			));
 		break;
 
 		case scancode::a:
 			if(build_mode)
-				building = actions.get_unit_type(UnitTypes::Terran_Academy);
+			{
+				unit_t* u = actions.get_single_selected_unit(owner);
+				switch(u->unit_type->id)
+				{
+					case UnitTypes::Terran_SCV:
+						building = actions.get_unit_type(UnitTypes::Terran_Academy);
+					break;
+
+					case UnitTypes::Protoss_Probe:
+						building = actions.get_unit_type(UnitTypes::Protoss_Assimilator);
+					break;
+
+					default:;
+				}
+			}
 		break;
 
 		case scancode::u:
@@ -86,7 +133,21 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 
 		case scancode::c:
 			if(build_mode)
-				building = actions.get_unit_type(UnitTypes::Terran_Command_Center);
+			{
+				unit_t* u = actions.get_single_selected_unit(owner);
+				switch(u->unit_type->id)
+				{
+					case UnitTypes::Terran_SCV:
+						building = actions.get_unit_type(UnitTypes::Terran_Command_Center);
+					break;
+
+					case UnitTypes::Protoss_Probe:
+						building = actions.get_unit_type(UnitTypes::Protoss_Cybernetics_Core);
+					break;
+
+					default:;
+				}
+			}
 		break;
 
 		case scancode::r:
@@ -124,7 +185,18 @@ bool user_input_handler::left_click(const simple::interactive::mouse_down& mouse
 {
 	if(building)
 	{
-		actions.action_build(owner, actions.get_order_type(Orders::PlaceBuilding), building, to_xy<size_t>(building_tile_position));
+		unit_t* u = actions.get_single_selected_unit(owner);
+		actions.execute_action(owner, std::tuple(
+			bwgame::action_data::build{},
+			actions.get_order_type(
+				u->unit_type->id == UnitTypes::Terran_SCV ? Orders::PlaceBuilding :
+				u->unit_type->id == UnitTypes::Zerg_Drone ? Orders::PlaceBuilding :
+				u->unit_type->id == UnitTypes::Protoss_Probe ? Orders::PlaceProtossBuilding :
+				Orders::None
+			),
+			action_data::tile_vector(building_tile_position),
+			building
+		));
 		build_mode = false;
 		building = nullptr;
 		return true;
@@ -136,12 +208,15 @@ bool user_input_handler::left_click(const simple::interactive::mouse_down& mouse
 void user_input_handler::default_action(int2 position) const
 {
 	unit_t* target = actions.select_get_unit_at(to_xy(position));
-	actions.action_default_order(owner, to_xy(position), target, nullptr, false);
+	actions.execute_action(owner, std::tuple(
+		bwgame::action_data::default_order{},
+		action_data::position_vector(position),
+		target, nullptr, false
+	));
 }
 
-void user_input_handler::select(sprt::range<int2> region, bool double_clicked)
+void user_input_handler::select(range2 region, bool double_clicked)
 {
-
 
 	using simple::interactive::pressed;
 	using simple::interactive::scancode;
@@ -185,7 +260,10 @@ void user_input_handler::select(sprt::range<int2> region, bool double_clicked)
 			{
 				if(std::find(already_selected.begin(), already_selected.end(), u) != already_selected.end())
 				{
-					actions.action_deselect(owner, u);
+					actions.execute_action(owner, std::tuple{
+						bwgame::action_data::deselect{},
+						bwgame::action_data::selection_array{{u}, {1}}
+					});
 					// shift-deselected one selected unit, we are done
 					return;
 				}
@@ -194,7 +272,10 @@ void user_input_handler::select(sprt::range<int2> region, bool double_clicked)
 		else
 		{
 			// select only one enemy unit and we are done
-			actions.action_select(owner, u);
+			actions.execute_action(owner, std::tuple{
+				bwgame::action_data::select{},
+				bwgame::action_data::selection_array{{u}, {1}}
+			});
 			return;
 		}
 	}
@@ -251,12 +332,20 @@ void user_input_handler::select(sprt::range<int2> region, bool double_clicked)
 	size_t available_slots = 12 -
 	(shift ? std::distance(already_selected.begin(), already_selected.end()) : 0);
 
-	auto selection = simple::support::get_iterator_range(selection_buffer, {0, available_slots});
+	auto size = std::min(selection_buffer.size(), available_slots);
+
+	std::copy_n(selection_buffer.begin(), size, selection.begin());
 
 	if(shift)
-		actions.action_shift_select(owner, selection);
+		actions.execute_action(owner, std::tuple{
+			bwgame::action_data::shift_select{},
+			bwgame::action_data::selection_array{selection, {size}}
+		});
 	else
-		actions.action_select(owner, selection);
+		actions.execute_action(owner, std::tuple{
+			bwgame::action_data::select{},
+			bwgame::action_data::selection_array{selection, {size}}
+		});
 
 	selection_buffer.clear();
 

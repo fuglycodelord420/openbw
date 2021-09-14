@@ -17,11 +17,9 @@ namespace bwgame
 		static constexpr auto red = 0xfc1018ff_rgba;
 	};
 
-	using simple::graphical::int2;
 	using simple::graphical::pixel_byte;
 	using simple::graphical::rgba_pixel;
 	using simple::graphical::surface;
-	using range2 = simple::support::range<int2>;
 	using pixel_writer = simple::graphical::pixel_writer<pixel_byte>;
 	using pixel_writer_rgba = simple::graphical::pixel_writer<rgba_pixel, pixel_byte>;
 

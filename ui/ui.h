@@ -1592,7 +1592,7 @@ struct ui_functions: ui_util_functions {
 	bool is_paused = false;
 	bool is_drag_selecting = false;
 	bool is_dragging_screen = false;
-	sprt::range<int2> drag_select{};
+	sup::range<int2> drag_select{};
 	int2 drag_screen_pos;
 
 	std::vector<unit_t*> temp_selected_unit_buffer;
@@ -1616,7 +1616,7 @@ struct ui_functions: ui_util_functions {
 			auto minimap_valid_positions = minimap_area;
 			minimap_valid_positions.size -= 1;
 			// NOTE: wow, range clamp/intersect is really unwieldy with implicit conversion :/
-			simple::support::clamp_in_place<int2, int2>(position, minimap_valid_positions);
+			sup::clamp_in_place<int2>(position, minimap_valid_positions);
 			position = position - minimap_area.position;
 
 			auto tile_size = int2(game_st.map_tile_width, game_st.map_tile_height);
@@ -1625,7 +1625,7 @@ struct ui_functions: ui_util_functions {
 		};
 
 		auto check_move_minimap = [&](auto& e) {
-			if(simple::support::intersects_lower<int2>(minimap_area, e.data.position))
+			if(sup::intersects_lower<int2>(minimap_area, e.data.position))
 			{
 				is_moving_minimap = true;
 				move_minimap(e.data.position);

@@ -10,6 +10,10 @@
 #include "containers.h"
 #include "strf.h"
 
+#include "simple/support/range.hpp"
+#include "simple/geom/vector.hpp"
+#include "simple/graphical/common_def.h"
+
 namespace bwgame {
 
 template<typename utype>
@@ -833,6 +837,31 @@ struct exception : std::runtime_error {
 template<typename...T>
 void error(const char* fmt, T&&... args) {
 	throw exception(format(fmt, std::forward<T>(args)...));
+}
+
+using simple::graphical::int2;
+using range2 = simple::support::range<int2>;
+namespace sup = simple::support;
+
+template <typename T = int>
+inline xy_t<T> to_xy(int2 v) { return {T(v.x()), T(v.y())}; }
+inline rect to_rect(sup::range<int2> v)
+{
+	return
+	{
+		to_xy(v.lower()),
+		to_xy(v.upper())
+	};
+}
+
+inline int2 to_int2(xy v) { return {v.x,v.y}; }
+inline sup::range<int2> to_range2(rect r)
+{
+	return
+	{
+		to_int2(r.from),
+		to_int2(r.to)
+	};
 }
 
 }

@@ -181,71 +181,6 @@ namespace sync_messages {
 	};
 }
 
-template<size_t max_size, bool default_little_endian = true>
-struct data_writer {
-	std::array<uint8_t, max_size> arr;
-	size_t pos = 0;
-	template<typename T, bool little_endian = default_little_endian>
-	void put(T v) {
-		static_assert(std::is_integral<T>::value, "don't know how to write this type");
-		size_t n = pos;
-		skip(sizeof(T));
-		data_loading::set_value_at<little_endian>(data() + n, v);
-	}
-	void skip(size_t n) {
-		pos += n;
-		if (pos > arr.size()) error("sync_functions::writer: attempt to write past end");
-	}
-	void put_bytes(const uint8_t* src, size_t n) {
-		skip(n);
-		memcpy(data() + pos - n, src, n);
-	}
-	size_t size() const {
-		return pos;
-	}
-	const uint8_t* data() const {
-		return arr.data();
-	}
-	uint8_t* data() {
-		return arr.data();
-	}
-};
-
-template<bool default_little_endian = true>
-struct dynamic_data_writer {
-	std::vector<uint8_t> vec;
-	size_t pos = 0;
-	dynamic_data_writer() = default;
-	dynamic_data_writer(size_t initial_size) : vec(initial_size) {}
-	template<typename T, bool little_endian = default_little_endian>
-	void put(T v) {
-		static_assert(std::is_integral<T>::value, "don't know how to write this type");
-		size_t n = pos;
-		skip(sizeof(T));
-		data_loading::set_value_at<little_endian>(data() + n, v);
-	}
-	void skip(size_t n) {
-		pos += n;
-		if (pos >= vec.size()) {
-			if (vec.size() < 2048) vec.resize(std::max(pos, vec.size() + vec.size()));
-			else vec.resize(std::max(pos, std::max(vec.size() + vec.size() / 2, (size_t)32)));
-		}
-	}
-	void put_bytes(const uint8_t* src, size_t n) {
-		skip(n);
-		memcpy(data() + pos - n, src, n);
-	}
-	size_t size() const {
-		return pos;
-	}
-	const uint8_t* data() const {
-		return vec.data();
-	}
-	uint8_t* data() {
-		return vec.data();
-	}
-};
-
 template <typename Server>
 struct sync_functions;
 
@@ -411,6 +346,15 @@ struct sync_functions: action_functions {
 		return schedule_action(client, r);
 	}
 
+	virtual void execute_action(int, const action_data::variant& act) override
+	{
+		std::visit([&](auto& action)
+		{
+			get_syncer().send(
+				sup::tuple_car(action).
+					write(sup::tuple_tie_cdr(action)) );
+		}, act);
+	}
 
 	struct syncer_t {
 		sync_functions& funcs;

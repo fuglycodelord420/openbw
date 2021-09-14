@@ -10,6 +10,8 @@
 #include <cstring>
 #include <cstdio>
 
+// TODO: this is UB galore isn't it?
+
 namespace bwgame {
 namespace data_loading {
 
@@ -190,7 +192,7 @@ struct paged_reader {
 		if (offset > file_size) error("paged_reader: attempt to seek past end");
 		file_pointer = offset;
 	}
-	
+
 	size_t left() const {
 		return file_size - file_pointer;
 	}
@@ -272,7 +274,7 @@ struct file_reader {
 	bool eof() {
 		return feof(f);
 	}
-	
+
 	size_t left() const {
 		return size() - tell();
 	}
@@ -363,7 +365,7 @@ struct encrypted_reader {
 	T get() {
 		return get_impl<T, little_endian>(*this);
 	}
-	
+
 	size_t left() const {
 		return end_pos - pos + data_n;
 	}
@@ -834,7 +836,7 @@ size_t decompress_huffman(uint8_t* input, size_t input_size, uint8_t* output, si
 	size_t weights_index = r.template get<uint8_t>();
 	if (weights_index >= 9) error("decompress_huffman: invalid weights index %d", weights_index);
 	const uint8_t* weights = huffman_weight_tables[weights_index];
-	
+
 	struct tree_node;
 	using tree_node_iterator = typename a_list<tree_node>::iterator;
 	struct tree_node {
@@ -853,27 +855,27 @@ size_t decompress_huffman(uint8_t* input, size_t input_size, uint8_t* output, si
 		if (w == 0) continue;
 		all_nodes.push_back({end, end, w, i});
 	}
-	
+
 	all_nodes.sort([&](auto& a, auto& b) {
 		return a.weight < b.weight;
 	});
-	
+
 	for (auto a = all_nodes.begin(); a != end;) {
 		auto b = std::next(a);
 		if (b == end) break;
-		
+
 		int w = a->weight + b->weight;
 		auto it = std::find_if(all_nodes.begin(), all_nodes.end(), [&](auto& v) {
 			return v.weight >= w;
 		});
 		it = all_nodes.insert(it, {a, end, w, -1});
-		
+
 		a->parent = it;
 		b->parent = it;
-		
+
 		a = std::next(b);
 	}
-	
+
 	auto increment_weight = [&](tree_node_iterator n) {
 		for (; n != end; n = n->parent) {
 			++n->weight;
@@ -885,7 +887,7 @@ size_t decompress_huffman(uint8_t* input, size_t input_size, uint8_t* output, si
 			if (swap_n == n) continue;
 			all_nodes.splice(n, all_nodes, swap_n);
 			all_nodes.splice(swap_n_next, all_nodes, n);
-			
+
 			if (n->parent->left == n) {
 				if (swap_n->parent->left == swap_n) swap_n->parent->left = n;
 				n->parent->left = swap_n;
@@ -893,9 +895,9 @@ size_t decompress_huffman(uint8_t* input, size_t input_size, uint8_t* output, si
 			std::swap(n->parent, swap_n->parent);
 		}
 	};
-	
+
 	size_t out_pos = 0;
-	
+
 	while (out_pos < output_size) {
 		tree_node_iterator n = std::prev(end);
 		while (n->symbol == -1) {
@@ -908,24 +910,24 @@ size_t decompress_huffman(uint8_t* input, size_t input_size, uint8_t* output, si
 		if (n->symbol == 257) {
 			int symbol = r.template get_bits<8>();
 			value = symbol;
-			
+
 			n = all_nodes.begin();
 			int n_symbol = n->symbol;
-			
+
 			n->symbol = -1;
-			
+
 			all_nodes.push_front({end, n, 1, n_symbol});
 			all_nodes.push_front({end, n, 0, symbol});
 			n->left = all_nodes.begin();
 			n = n->left;
-			
+
 			increment_weight(n);
 			if (weights_index != 0) increment_weight(n);
-			
+
 		} else value = n->symbol;
 		output[out_pos] = value;
 		++out_pos;
-		
+
 		if (weights_index == 0) increment_weight(n);
 	}
 	return out_pos;
@@ -936,31 +938,31 @@ static const int adpcm_index_add_table[32] = {
 	-1, 1, -1, 5, -1, 3, -1, 7,
 	-1, 1, -1, 5, -1, 3, -1, 7,
 	-1, 2, -1, 4, -1, 6, -1, 8
-}; 
-static const int32_t adpcm_step_table[89] = { 
-	7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 
-	19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 
-	50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 
+};
+static const int32_t adpcm_step_table[89] = {
+	7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
+	19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+	50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
 	130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
 	337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
-	876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 
+	876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
 	2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
-	5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 
-	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767 
+	5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
+	15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767
 };
 
 template<bool little_endian = true>
 size_t decompress_adpcm(uint8_t* input, size_t input_size, uint8_t* output, size_t output_size, size_t channels) {
 	data_reader<little_endian> r(input, input + input_size);
-	
+
 	size_t out_pos = 0;
-	
+
 	a_vector<int16_t> previous_sample(channels);
 	a_vector<int> step_index(channels, 44);
-	
+
 	r.template get<uint8_t>();
 	auto shift = r.template get<uint8_t>();
-	
+
 	for (size_t i = 0; i != channels; ++i) {
 		auto sample = r.template get<int16_t>();
 		previous_sample[i] = sample;
@@ -968,7 +970,7 @@ size_t decompress_adpcm(uint8_t* input, size_t input_size, uint8_t* output, size
 		set_value_at<little_endian, int16_t>(output + out_pos, sample);
 		out_pos += 2;
 	}
-	
+
 	while (r.left()) {
 		for (size_t channel = 0; channel != channels; ++channel) {
 			auto in_value = r.template get<uint8_t>();
@@ -989,12 +991,12 @@ size_t decompress_adpcm(uint8_t* input, size_t input_size, uint8_t* output, size
 					sample = previous_sample[channel] + sample;
 					if (sample > 32767) sample = 32767;
 				}
-				
+
 				previous_sample[channel] = sample;
 				if (out_pos - output_size < 2) error("decompress_adpcm: attempt to write past end");
 				set_value_at<true, int16_t>(output + out_pos, sample);
 				out_pos += 2;
-				
+
 				index += adpcm_index_add_table[in_value & 0x1f];
 				if (index < 0) index = 0;
 				else if (index > 88) index = 88;
@@ -1018,7 +1020,7 @@ size_t decompress_adpcm(uint8_t* input, size_t input_size, uint8_t* output, size
 			}
 		}
 	}
-	
+
 	return out_pos;
 }
 
@@ -1086,7 +1088,7 @@ struct mpq_archive_file_reader {
 				sector_data_r.get_bytes(compressed_data.data(), sector_data_size);
 			} else {
 				compression_flags = sector_data_r.template get<uint8_t>();
-	
+
 				if (compressed_data.size() < sector_data_size) compressed_data.resize(sector_data_size);
 				sector_data_r.get_bytes(compressed_data.data(), sector_data_size - 1);
 			}
@@ -1792,6 +1794,73 @@ sound_types_t load_sfxdata_dat(const data_T& data) {
 #undef rawr
 
 }
+
+template<size_t max_size, bool default_little_endian = true>
+struct data_writer {
+	std::array<uint8_t, max_size> arr;
+	size_t pos = 0;
+	template<typename T, bool little_endian = default_little_endian>
+	void put(T v) {
+		static_assert(std::is_integral<T>::value, "don't know how to write this type");
+		size_t n = pos;
+		skip(sizeof(T));
+		data_loading::set_value_at<little_endian>(data() + n, v);
+	}
+	void skip(size_t n) {
+		pos += n;
+		if (pos > arr.size()) error("sync_functions::writer: attempt to write past end");
+	}
+	void put_bytes(const uint8_t* src, size_t n) {
+		skip(n);
+		memcpy(data() + pos - n, src, n);
+	}
+	size_t size() const {
+		return pos;
+	}
+	const uint8_t* data() const {
+		return arr.data();
+	}
+	uint8_t* data() {
+		return arr.data();
+	}
+};
+
+template<bool default_little_endian = true>
+struct dynamic_data_writer {
+	std::vector<uint8_t> vec;
+	size_t pos = 0;
+	dynamic_data_writer() = default;
+	dynamic_data_writer(size_t initial_size) : vec(initial_size) {}
+	template<typename T, bool little_endian = default_little_endian>
+	void put(T v) {
+		static_assert(std::is_integral<T>::value, "don't know how to write this type");
+		size_t n = pos;
+		skip(sizeof(T));
+		data_loading::set_value_at<little_endian>(data() + n, v);
+	}
+	void skip(size_t n) {
+		pos += n;
+		if (pos >= vec.size()) {
+			if (vec.size() < 2048) vec.resize(std::max(pos, vec.size() + vec.size()));
+			else vec.resize(std::max(pos, std::max(vec.size() + vec.size() / 2, (size_t)32)));
+		}
+	}
+	void put_bytes(const uint8_t* src, size_t n) {
+		skip(n);
+		memcpy(data() + pos - n, src, n);
+	}
+	size_t size() const {
+		return pos;
+	}
+	const uint8_t* data() const {
+		return vec.data();
+	}
+	uint8_t* data() {
+		return vec.data();
+	}
+};
+
+
 }
 
 #endif

@@ -14,28 +14,6 @@
 
 namespace bwgame
 {
-	namespace sprt = simple::support;
-
-	template <typename T = int>
-	inline xy_t<T> to_xy(int2 v) { return {T(v.x()), T(v.y())}; }
-	inline rect to_rect(sprt::range<int2> v)
-	{
-		return
-		{
-			to_xy(v.lower()),
-			to_xy(v.upper())
-		};
-	}
-
-	inline int2 to_int2(xy v) { return {v.x,v.y}; }
-	inline sprt::range<int2> to_range2(rect r)
-	{
-		return
-		{
-			to_int2(r.from),
-			to_int2(r.to)
-		};
-	}
 
 	struct user_input_handler
 	{
@@ -49,6 +27,7 @@ namespace bwgame
 		int2 building_tile_position;
 
 		std::vector<unit_t*> selection_buffer;
+		std::array<unit_t*, 12> selection;
 
 		user_input_handler
 		(
@@ -58,7 +37,7 @@ namespace bwgame
 			const simple::geom::segment<int2>& view
 		);
 
-		void select(sprt::range<int2> region, bool double_clicked);
+		void select(range2 region, bool double_clicked);
 
 
 		void default_action(int2) const;
