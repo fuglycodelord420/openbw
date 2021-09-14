@@ -49,31 +49,36 @@ struct object_container {
 	a_deque<std::array<T, allocation_granularity>> list;
 	intrusive_list<T, default_link_f> free_list;
 	size_t size = 0;
-	
+
 	T* get(size_t index, bool add_new_to_free = true) {
 		if (index) index = max_size - index;
 		while (size <= index) grow(add_new_to_free);
 		return &list[index / allocation_granularity][index % allocation_granularity];
 	}
-	
-	T* try_get(size_t index) {
+
+	const T* try_get(size_t index) const {
 		if (index) index = max_size - index;
 		if (size <= index) return nullptr;
 		return &list[index / allocation_granularity][index % allocation_granularity];
 	}
-	
+
+	T* try_get(size_t index) {
+		return const_cast<T*>(const_cast<const object_container*>(this)->try_get(index));
+	}
+
+
 	T* at(size_t index) {
 		if (index) index = max_size - index;
 		if (size <= index) error("object_container::get const: invalid index %u", index);
 		return &list[index / allocation_granularity][index % allocation_granularity];
 	}
-	
+
 	const T* at(size_t index) const {
 		if (index) index = max_size - index;
 		if (size <= index) error("object_container::get const: invalid index %u", index);
 		return &list[index / allocation_granularity][index % allocation_granularity];
 	}
-	
+
 	void grow(bool add_new_to_free) {
 		if (size == max_size) error("object_container: attempt to grow beyond max_size");
 		list.emplace_back();
@@ -85,7 +90,7 @@ struct object_container {
 			++size;
 		}
 	}
-	
+
 	T* top() {
 		if (free_list.empty()) {
 			if (size == max_size) return nullptr;
@@ -132,7 +137,7 @@ struct player_t {
 	race_t race{};
 	int force = 0;
 	int color = 0;
-	
+
 	bool initially_active = false;
 	int victory_state = 0;
 };
@@ -309,7 +314,7 @@ struct regions_t {
 struct creep_life_t {
 	int recede_timer = 0;
 	int check_dead_unit_timer = 0;
-	
+
 	struct entry {
 		std::pair<entry*, entry*> hash_link;
 		std::pair<entry*, entry*> list_link;
@@ -339,9 +344,9 @@ struct creep_life_t {
 	intrusive_list<entry, void, &entry::list_link> free_list;
 	size_t free_list_size = 0;
 	entry_hash_table table;
-	
+
 	a_vector<entry> entry_container = a_vector<entry>(1024);
-	
+
 	creep_life_t() {
 		for (auto& v : entry_container) {
 			free_list.push_back(v);
@@ -409,7 +414,7 @@ struct image_t: link_base {
 		flag_hidden = 0x40,
 		flag_uses_special_offset = 0x80
 	};
-	
+
 	size_t index;
 	const image_type_t* image_type;
 	int modifier;
@@ -547,7 +552,7 @@ struct path_t: link_base {
 };
 
 struct unit_t: flingy_t {
-	
+
 	unit_t() {}
 
 	enum status_flags_t : uint_fast32_t {
@@ -558,7 +563,7 @@ struct unit_t: flingy_t {
 		status_flag_burrowed = 0x10,
 		status_flag_in_bunker = 0x20,
 		status_flag_loaded = 0x40,
-		
+
 		status_flag_requires_detector = 0x100,
 		status_flag_cloaked = 0x200,
 		status_flag_disabled = 0x400,
@@ -576,7 +581,7 @@ struct unit_t: flingy_t {
 		status_flag_400000 = 0x400000,
 		status_flag_gathering = 0x800000,
 		status_flag_turret_walking = 0x1000000,
-		
+
 		status_flag_invincible = 0x4000000,
 		status_flag_ready_to_attack = 0x8000000,
 
@@ -603,7 +608,7 @@ struct unit_t: flingy_t {
 
 	unit_t* subunit;
 	intrusive_list<order_t, default_link_f> order_queue;
-	unit_t* auto_target_unit;	
+	unit_t* auto_target_unit;
 	unit_t* connected_unit;
 	int order_queue_count;
 	int order_process_timer;
@@ -684,7 +689,7 @@ struct unit_t: flingy_t {
 
 	struct building_t {
 		building_t() {}
-		
+
 		unit_t* addon;
 		const unit_type_t* addon_build_type;
 		int upgrade_research_time;
