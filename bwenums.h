@@ -361,6 +361,7 @@ enum struct WeaponTypes : int {
 	None = 130,
 };
 
+// TODO: assumed to be convertible to uint8_t, so why int underlying type??
 enum struct Orders : int {
 	Die,
 	Stop,
@@ -626,7 +627,7 @@ enum struct UpgradeTypes : int {
 	Chitinous_Plating,
 	Anabolic_Synthesis,
 	Charon_Boosters,
-	
+
 	None = 61
 };
 
