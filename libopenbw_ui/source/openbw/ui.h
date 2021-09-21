@@ -716,7 +716,9 @@ struct ui_functions: ui_util_functions {
 	}
 
 
-	void draw_tiles(uint8_t* data, size_t data_pitch) {
+	void draw_tiles(pixel_writer pixels) {
+		uint8_t* data = pixels.row();
+		size_t data_pitch = pixels.pitch();
 
 		auto screen_tile = screen_tile_bounds();
 
@@ -802,6 +804,14 @@ struct ui_functions: ui_util_functions {
 
 				++megatile_index;
 				++tile;
+
+				// NOTE: for some reason tile visibility flags are inverted
+				if(user_input && not not (tile->visible & (1u << user_input->owner)))
+				{
+					fill_rectangle(pixels, simple::geom::segment{int2(width, height), int2(screen_x + offset_x, screen_y + offset_y)},  0);
+				}
+
+
 			}
 			megatile_index -= width;
 			megatile_index += game_st.map_tile_width;
@@ -1204,8 +1214,11 @@ struct ui_functions: ui_util_functions {
 			}
 		}
 
-		for (auto& v : sorted_sprites) {
-			draw_sprite(v.second, data, data_pitch);
+		for (auto& [id, sprite] : sorted_sprites) {
+			if(user_input && (sprite->visibility_flags & 1u << user_input->owner) )
+			{
+				draw_sprite(sprite, data, data_pitch);
+			}
 		}
 
 		for (auto* s : current_selection_sprites) {
@@ -1866,7 +1879,7 @@ struct ui_functions: ui_util_functions {
 
 		auto indexed_pixels = std::get<pixel_writer>(indexed_surface.pixels());
 		auto data = indexed_pixels.row();
-		draw_tiles(data, indexed_pixels.pitch());
+		draw_tiles(indexed_pixels);
 		draw_sprites(data, indexed_pixels.pitch());
 
 		draw_callback(data, indexed_pixels.pitch());
