@@ -2,7 +2,7 @@
 
 - Major rework of action.h and sync.h
 - Using boost asio instead of standalone asio
-- Slowly migrating to external implemetaion of vector algebra
+- Slowly migrating to external implementation of vector algebra
 - License is now GPL3, sorry proprietary apps
 
 # Dependencies

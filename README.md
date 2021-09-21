@@ -4,7 +4,7 @@ The project is now split into two libraries and an example project:
 
 libopenbw_core - a header only library with the core game logic and networking
 
-libopenbw_ui - static library fot rendering and GUI
+libopenbw_ui - static library for rendering and GUI
 
 replay_viewer - example project for viewing game replays using the above libraries
 
