@@ -1229,6 +1229,7 @@ struct ui_functions: ui_util_functions {
 
 	bool unit_visble_on_minimap(unit_t* u) {
 		if (u->owner < 8 && u->sprite->visibility_flags == 0) return false;
+		if(user_input && not (u->sprite->visibility_flags & (1u << user_input->owner))) return false;
 		if (ut_turret(u)) return false;
 		if (unit_is_trap(u)) return false;
 		if (unit_is(u, UnitTypes::Spell_Dark_Swarm)) return false;
@@ -1265,14 +1266,17 @@ struct ui_functions: ui_util_functions {
 		loop(minimap_pixels.size(), [this, &minimap_pixels](auto i)
 		{
 			int flat_i = i.y() * minimap_pixels.size().x() + i.x();
+			auto& tile = st.tiles[flat_i];
 			size_t index;
-			if (~st.tiles[flat_i].flags & tile_t::flag_has_creep) index = st.tiles_mega_tile_index[flat_i];
+			if (~tile.flags & tile_t::flag_has_creep) index = st.tiles_mega_tile_index[flat_i];
 			else index = game_st.cv5.at(1).mega_tile_index[creep_random_tile_indices[flat_i]];
 			auto* images = &tileset_img.vx4.at(index).images[0];
 			auto* bitmap = &tileset_img.vr4.at(*images / 2).bitmap[0];
 			auto val = bitmap[55 / sizeof(vr4_entry::bitmap_t)];
 			size_t shift = 8 * (55 % sizeof(vr4_entry::bitmap_t));
 			val >>= shift;
+			if(user_input && not not (tile.visible & (1u << user_input->owner)))
+				val = 0;
 			minimap_pixels.set(val, i);
 		});
 
