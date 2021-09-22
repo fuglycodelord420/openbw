@@ -49,6 +49,10 @@ namespace bwgame
 
 		void draw(pixel_writer_rgba);
 
+		bool is_visible(const sprite_t& sprite) const;
+		bool is_visible(const tile_t& tile) const;
+		// TODO: is_explored(const tile_t& tile)
+
 	};
 
 } // namespace bwgame

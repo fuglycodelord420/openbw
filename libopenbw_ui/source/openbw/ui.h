@@ -802,16 +802,13 @@ struct ui_functions: ui_util_functions {
 					}
 				}
 
-				++megatile_index;
-				++tile;
-
-				// NOTE: for some reason tile visibility flags are inverted
-				if(user_input && not not (tile->visible & (1u << user_input->owner)))
+				if(user_input && not user_input->is_visible(*tile))
 				{
 					fill_rectangle(pixels, simple::geom::segment{int2(width, height), int2(screen_x + offset_x, screen_y + offset_y)},  0);
 				}
 
-
+				++megatile_index;
+				++tile;
 			}
 			megatile_index -= width;
 			megatile_index += game_st.map_tile_width;
@@ -1215,7 +1212,7 @@ struct ui_functions: ui_util_functions {
 		}
 
 		for (auto& [id, sprite] : sorted_sprites) {
-			if(not user_input || (sprite->visibility_flags & 1u << user_input->owner) )
+			if(not user_input || user_input->is_visible(*sprite))
 			{
 				draw_sprite(sprite, data, data_pitch);
 			}
@@ -1229,7 +1226,7 @@ struct ui_functions: ui_util_functions {
 
 	bool unit_visble_on_minimap(unit_t* u) {
 		if (u->owner < 8 && u->sprite->visibility_flags == 0) return false;
-		if(user_input && not (u->sprite->visibility_flags & (1u << user_input->owner))) return false;
+		if (user_input && not user_input->is_visible(*(u->sprite))) return false;
 		if (ut_turret(u)) return false;
 		if (unit_is_trap(u)) return false;
 		if (unit_is(u, UnitTypes::Spell_Dark_Swarm)) return false;
@@ -1275,7 +1272,7 @@ struct ui_functions: ui_util_functions {
 			auto val = bitmap[55 / sizeof(vr4_entry::bitmap_t)];
 			size_t shift = 8 * (55 % sizeof(vr4_entry::bitmap_t));
 			val >>= shift;
-			if(user_input && not not (tile.visible & (1u << user_input->owner)))
+			if(user_input && not user_input->is_visible(tile))
 				val = 0;
 			minimap_pixels.set(val, i);
 		});

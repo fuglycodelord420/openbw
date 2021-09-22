@@ -395,3 +395,14 @@ void user_input_handler::draw(pixel_writer_rgba pixels)
 
 }
 
+// TODO: account for allied vision
+bool user_input_handler::is_visible(const sprite_t& sprite) const
+{
+	return sprite.visibility_flags & (1u << owner);
+}
+
+bool user_input_handler::is_visible(const tile_t& tile) const
+{
+	// NOTE: for some reason tile visibility flags are inverted
+	return not (tile.visible & (1u << owner));
+}
