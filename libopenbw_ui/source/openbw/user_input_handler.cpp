@@ -231,7 +231,7 @@ void user_input_handler::select(range2 region, bool double_clicked)
 	{
 		unit_t* u = actions.select_get_unit_at(to_xy(view.position + region.lower()));
 
-		if(!u)
+		if(!u || !is_visible(*u))
 		{
 
 			return;
@@ -282,7 +282,7 @@ void user_input_handler::select(range2 region, bool double_clicked)
 		bool any_non_neutrals = false;
 		for (unit_t* u : actions.find_units(to_rect(region + view.position)))
 		{
-			if (actions.unit_can_be_selected(u))
+			if (actions.unit_can_be_selected(u) && is_visible(*u))
 				selection_buffer.push_back(u);
 		}
 
@@ -362,35 +362,49 @@ auto div_round(T divident, T divisor)
 
 void user_input_handler::draw(pixel_writer_rgba pixels)
 {
-	// draw building placement box
-	constexpr auto tile_size = int2::one(32);
-
-	if(building)
+	// deselect units out of vision range
 	{
-		auto building_tiles = div_ceil(to_int2(building->placement_size), tile_size);
+		std::array<unit_t*, 12> selected_not_visible{};
+		size_t i = 0;
+		for(auto&& u : actions.selected_units(owner))
+			if(!is_visible(*u))
+				selected_not_visible[i++] = u;
+		actions.execute_action(owner, std::tuple{
+			bwgame::action_data::deselect{},
+			bwgame::action_data::selection_array{{selected_not_visible}, {i}}
+		});
+	}
 
-		auto mouse = simple::interactive::last_mouse_state();
+	// draw building placement box
+	{
+		constexpr auto tile_size = int2::one(32);
 
-		auto building_size = tile_size * building_tiles;
+		if(building)
+		{
+			auto building_tiles = div_ceil(to_int2(building->placement_size), tile_size);
 
-		auto map_position = view.position + mouse.position;
-		map_position -= building_size / 2;
+			auto mouse = simple::interactive::last_mouse_state();
 
-		map_position = div_round(map_position, tile_size);
-		building_tile_position = map_position;
-		map_position *= tile_size;
+			auto building_size = tile_size * building_tiles;
 
-		map_position -= view.position;
+			auto map_position = view.position + mouse.position;
+			map_position -= building_size / 2;
 
-		unit_t* u = actions.get_single_selected_unit(owner);
-		bool can_place = actions.can_place_building(
-			u, owner, building,
-			to_xy(building_tile_position * tile_size + building_size/2),
-			false, false);
-		line_rectangle_rgba(pixels,
-			simple::geom::segment{building_size, map_position},
-			can_place ? rgba_color::green : rgba_color::red);
+			map_position = div_round(map_position, tile_size);
+			building_tile_position = map_position;
+			map_position *= tile_size;
 
+			map_position -= view.position;
+
+			unit_t* u = actions.get_single_selected_unit(owner);
+			bool can_place = actions.can_place_building(
+				u, owner, building,
+				to_xy(building_tile_position * tile_size + building_size/2),
+				false, false);
+			line_rectangle_rgba(pixels,
+				simple::geom::segment{building_size, map_position},
+				can_place ? rgba_color::green : rgba_color::red);
+		}
 	}
 
 }
@@ -399,6 +413,11 @@ void user_input_handler::draw(pixel_writer_rgba pixels)
 bool user_input_handler::is_visible(const sprite_t& sprite) const
 {
 	return sprite.visibility_flags & (1u << owner);
+}
+
+bool user_input_handler::is_visible(const unit_t& unit) const
+{
+	return is_visible(*(unit.sprite));
 }
 
 bool user_input_handler::is_visible(const tile_t& tile) const

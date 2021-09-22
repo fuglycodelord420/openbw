@@ -1226,7 +1226,7 @@ struct ui_functions: ui_util_functions {
 
 	bool unit_visble_on_minimap(unit_t* u) {
 		if (u->owner < 8 && u->sprite->visibility_flags == 0) return false;
-		if (user_input && not user_input->is_visible(*(u->sprite))) return false;
+		if (user_input && not user_input->is_visible(*u)) return false;
 		if (ut_turret(u)) return false;
 		if (unit_is_trap(u)) return false;
 		if (unit_is(u, UnitTypes::Spell_Dark_Swarm)) return false;
