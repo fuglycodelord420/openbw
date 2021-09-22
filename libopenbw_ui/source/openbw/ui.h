@@ -1215,7 +1215,7 @@ struct ui_functions: ui_util_functions {
 		}
 
 		for (auto& [id, sprite] : sorted_sprites) {
-			if(user_input && (sprite->visibility_flags & 1u << user_input->owner) )
+			if(not user_input || (sprite->visibility_flags & 1u << user_input->owner) )
 			{
 				draw_sprite(sprite, data, data_pitch);
 			}
