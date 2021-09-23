@@ -13,6 +13,8 @@
 #include <cstdlib>
 #include <cmath>
 #include <functional>
+#include <optional>
+#include <cassert>
 
 namespace bwgame {
 
@@ -412,6 +414,25 @@ struct state_functions {
 		}
 	}
 
+	bool is_visible(int owner, const sprite_t* sprite) const
+	{
+		assert(sprite);
+		return sprite->visibility_flags & (1u << owner);
+	}
+
+	bool is_visible(int owner, const tile_t* tile) const
+	{
+		assert(tile);
+		// NOTE: for some reason tile visibility flags are inverted
+		return not (tile->visible & (1u << owner));
+	}
+
+	bool is_visible(int owner, const unit_t* unit) const
+	{
+		assert(unit);
+		return is_visible(owner, unit->sprite);
+	}
+
 	virtual void on_unit_deselect(unit_t* u) {}
 
 	virtual void on_unit_destroy(unit_t* u) {}
@@ -687,8 +708,22 @@ struct state_functions {
 		return bwgame::get_flingy_type(st, id);
 	}
 
+	std::optional<int> sound_owner = std::nullopt;
+
 	void play_sound(int id, const unit_t* source_unit, bool add_race_index = false) {
-		play_sound(id, source_unit ? source_unit->sprite->position : xy(), source_unit, add_race_index);
+		if(not source_unit)
+		{
+			play_sound(id, xy(), nullptr, add_race_index);
+		}
+		else if(not sound_owner || not source_unit || is_visible(*sound_owner, source_unit))
+		{
+			play_sound(id, source_unit->sprite->position, source_unit, add_race_index);
+		}
+	}
+
+	void play_sound(int id, const sprite_t* sprite) {
+		if(not sound_owner || not sprite || is_visible(*sound_owner, sprite))
+			play_sound(id, sprite ? sprite->position : xy());
 	}
 
 	void play_sound(int id, bool add_race_index = false) {
@@ -7208,7 +7243,7 @@ struct state_functions {
 				t->sprite->elevation_level = u->sprite->elevation_level + 1;
 				if (!us_hidden(t)) set_sprite_visibility(t->sprite, tile_visibility(t->sprite->position));
 			}
-			play_sound(550 + lcg_rand(17) % 2, u->order_target.pos);
+			play_sound(550 + lcg_rand(17) % 2, u->order_target.unit->sprite);
 			u->main_order_timer = 22;
 			u->order_state = 1;
 		} else if (u->order_state == 1 && u->main_order_timer == 0) {
@@ -14753,7 +14788,7 @@ struct state_functions {
 			int n = *p++;
 			if (!noop) {
 				int index = lcg_rand(4) % n;
-				play_sound(p[index], image->sprite->position);
+				play_sound(p[index], image->sprite);
 			}
 			p += n;
 		};
@@ -14909,7 +14944,7 @@ struct state_functions {
 			case opc_playsnd:
 				a = *p++;
 				if (noop) break;
-				play_sound(a, image->sprite->position);
+				play_sound(a, image->sprite);
 				break;
 			case opc_playsndrand:
 				playsndrand();
@@ -14918,7 +14953,7 @@ struct state_functions {
 				a = *p++;
 				b = *p++;
 				if (noop) break;
-				play_sound(a + lcg_rand(5) % (b - a + 1), image->sprite->position);
+					play_sound(a + lcg_rand(5) % (b - a + 1), image->sprite);
 				break;
 			case opc_domissiledmg:
 			case opc_dogrddamage:

@@ -18,6 +18,7 @@ user_input_handler::user_input_handler
 	building_tile_position()
 {
 	assert(owner >= 0 && owner < 8);
+	actions.sound_owner = owner;
 }
 
 void user_input_handler::handle_event(const simple::interactive::event& e)
@@ -363,6 +364,7 @@ auto div_round(T divident, T divisor)
 void user_input_handler::draw(pixel_writer_rgba pixels)
 {
 	// deselect units out of vision range
+	// TODO: this logic belongs to actions.h
 	{
 		std::array<unit_t*, 12> selected_not_visible{};
 		size_t i = 0;
@@ -409,19 +411,17 @@ void user_input_handler::draw(pixel_writer_rgba pixels)
 
 }
 
-// TODO: account for allied vision
 bool user_input_handler::is_visible(const sprite_t& sprite) const
 {
-	return sprite.visibility_flags & (1u << owner);
+	return actions.is_visible(owner, &sprite);
 }
 
 bool user_input_handler::is_visible(const unit_t& unit) const
 {
-	return is_visible(*(unit.sprite));
+	return actions.is_visible(owner, &unit);
 }
 
 bool user_input_handler::is_visible(const tile_t& tile) const
 {
-	// NOTE: for some reason tile visibility flags are inverted
-	return not (tile.visible & (1u << owner));
+	return actions.is_visible(owner, &tile);
 }
