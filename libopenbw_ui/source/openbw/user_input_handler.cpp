@@ -413,15 +413,15 @@ void user_input_handler::draw(pixel_writer_rgba pixels)
 
 bool user_input_handler::is_visible(const sprite_t& sprite) const
 {
-	return actions.is_visible(owner, &sprite);
+	return bwgame::is_visible(owner, &sprite);
 }
 
 bool user_input_handler::is_visible(const unit_t& unit) const
 {
-	return actions.is_visible(owner, &unit);
+	return bwgame::is_visible(owner, &unit);
 }
 
 bool user_input_handler::is_visible(const tile_t& tile) const
 {
-	return actions.is_visible(owner, &tile);
+	return bwgame::is_visible(owner, &tile);
 }

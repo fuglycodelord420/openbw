@@ -402,6 +402,25 @@ inline const order_type_t* get_order_type(const state& st, Orders id) {
 	return &st.global->order_types.vec[(size_t)id];
 }
 
+inline bool is_visible(int owner, const sprite_t* sprite)
+{
+	assert(sprite);
+	return sprite->visibility_flags & (1u << owner);
+}
+
+inline bool is_visible(int owner, const tile_t* tile)
+{
+	assert(tile);
+	// NOTE: for some reason tile visibility flags are inverted
+	return not (tile->visible & (1u << owner));
+}
+
+inline bool is_visible(int owner, const unit_t* unit)
+{
+	assert(unit);
+	return is_visible(owner, unit->sprite);
+}
+
 
 struct state_functions {
 
@@ -412,25 +431,6 @@ struct state_functions {
 		{
 			sound_proxy->play_sound(id, position, source_unit, add_race_index);
 		}
-	}
-
-	bool is_visible(int owner, const sprite_t* sprite) const
-	{
-		assert(sprite);
-		return sprite->visibility_flags & (1u << owner);
-	}
-
-	bool is_visible(int owner, const tile_t* tile) const
-	{
-		assert(tile);
-		// NOTE: for some reason tile visibility flags are inverted
-		return not (tile->visible & (1u << owner));
-	}
-
-	bool is_visible(int owner, const unit_t* unit) const
-	{
-		assert(unit);
-		return is_visible(owner, unit->sprite);
 	}
 
 	virtual void on_unit_deselect(unit_t* u) {}
