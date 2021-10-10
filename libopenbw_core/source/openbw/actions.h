@@ -22,7 +22,7 @@ struct action_state {
 	std::array<std::array<static_vector<unit_id, 12>, 10>, 8> control_groups{};
 };
 
-static inline action_state copy_state(const action_state& action_st, const state& source_st, const state& dest_st) {
+static inline action_state copy_state(const action_state& action_st, [[maybe_unused]] const state& source_st, const state& dest_st) {
 	action_state r;
 	r.player_id = action_st.player_id;
 	r.actions_data_position = action_st.actions_data_position;
@@ -984,7 +984,7 @@ struct action_functions: state_functions {
 		return true;
 	}
 
-	bool action(int owner, action_data::cheat, action_data::cheat_flags_t flags) {
+	bool action(int, action_data::cheat, action_data::cheat_flags_t flags) {
 		if (!st.cheats_enabled) return false;
 		st.cheat_operation_cwal = (flags & 2) != 0;
 		if (flags & 2) flags &= ~2;
@@ -1013,62 +1013,62 @@ struct action_functions: state_functions {
 	}
 
 
-	bool action(int owner, action_data::ping_minimap, action_data::position_vector)
+	bool action([[maybe_unused]] int owner, action_data::ping_minimap, action_data::position_vector)
 	{
 		// TODO:
 		return true;
 	}
 
-	bool action(int owner, action_data::chat, const std::string&)
+	bool action([[maybe_unused]] int owner, action_data::chat, const std::string&)
 	{
 		// TODO:
 		return true;
 	}
 
-	bool action(int owner, action_data::ext_cheat_hp, unit_t* target, int32_t value)
+	bool action(int, action_data::ext_cheat_hp, unit_t* target, int32_t value)
 	{
 		set_unit_hp(target, fp8::integer(value));
 		return true;
 	}
 
-	bool action(int owner, action_data::ext_cheat_shield, unit_t* target, int32_t value)
+	bool action(int, action_data::ext_cheat_shield, unit_t* target, int32_t value)
 	{
 		set_unit_shield_points(target, fp8::integer(value));
 		return true;
 	}
 
-	bool action(int owner, action_data::ext_cheat_energy, unit_t* target, int32_t value)
+	bool action(int, action_data::ext_cheat_energy, unit_t* target, int32_t value)
 	{
 		set_unit_energy(target, fp8::integer(value));
 		return true;
 	}
 
-	bool action(int owner, action_data::ext_cheat_upgrade, action_data::player_id_t player, const upgrade_type_t* upgrade, action_data::upgrade_level_t level)
+	bool action(int, action_data::ext_cheat_upgrade, action_data::player_id_t player, const upgrade_type_t* upgrade, action_data::upgrade_level_t level)
 	{
 		st.upgrade_levels.at(player)[upgrade->id] = level;
 		apply_upgrades_to_player_units(player);
 		return true;
 	}
 
-	bool action(int owner, action_data::ext_cheat_tech, action_data::player_id_t player, const tech_type_t* tech, bool researched)
+	bool action(int, action_data::ext_cheat_tech, action_data::player_id_t player, const tech_type_t* tech, bool researched)
 	{
 		st.tech_researched.at(player)[tech->id] = researched;
 		return true;
 	}
 
-	bool action(int owner, action_data::ext_cheat_minerals, action_data::player_id_t player, action_data::resource_amount_t amount)
+	bool action(int, action_data::ext_cheat_minerals, action_data::player_id_t player, action_data::resource_amount_t amount)
 	{
 		st.current_minerals.at(player) = amount;
 		return true;
 	}
 
-	bool action(int owner, action_data::ext_cheat_gas, action_data::player_id_t player, action_data::resource_amount_t amount)
+	bool action(int, action_data::ext_cheat_gas, action_data::player_id_t player, action_data::resource_amount_t amount)
 	{
 		st.current_gas.at(player) = amount;
 		return true;
 	}
 
-	virtual void on_action(int owner, int action) {
+	virtual void on_action([[maybe_unused]] int owner, [[maybe_unused]] int action) {
 	}
 
 	int get_owner_id(int player_id)
@@ -1084,7 +1084,7 @@ struct action_functions: state_functions {
 		int player_id = r.template get<uint8_t>();
 		int owner = get_owner_id(player_id);
 		if(owner == -1)
-			error("execute_action: player id %d not found", player_id);
+			error("read_action: player id %d not found", player_id);
 		return read_action(owner, r);
 	}
 
@@ -1120,9 +1120,9 @@ struct action_functions: state_functions {
 			{
 				action_data::id_t id;
 				if(not action_data::get(r, st, id))
-					error("execute_action: no action data");
+					error("read_action: no action data");
 
-				error("execute_action: unknown action %d", id);
+				error("read_action: failed to read action %d from player %d", id, owner);
 			}
 			return success;
 		},

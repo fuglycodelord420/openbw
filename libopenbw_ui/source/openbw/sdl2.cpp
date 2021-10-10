@@ -59,7 +59,7 @@ struct sdl_sound: sound {
 	}
 };
 
-void play(int channel, sound* arg_s, int volume, int pan) {
+void play(int channel, sound* arg_s, int volume, [[maybe_unused]] int pan) {
 	if (!initialized) init();
 	sdl_sound* s = (sdl_sound*)arg_s;
 	if (!s || !s->c) return;

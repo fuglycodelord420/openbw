@@ -226,7 +226,7 @@ namespace strf {
 
 
 			template<typename T>
-			unsigned int to_uint(T&& v) {
+			unsigned int to_uint(T&&) {
 				bad("argument can not be converted to unsigned int");
 				return 0;
 			}
@@ -239,7 +239,7 @@ namespace strf {
 			unsigned int to_uint(long v) { return v; }
 			unsigned int to_uint(unsigned long v) { return v; }
 			template<int base, bool caps, typename T>
-			void do_signed_int(T&& v) {
+			void do_signed_int(T&&) {
 				bad("argument is not numeric");
 			}
 			template<int base, bool caps> void do_signed_int(bool v) { do_num<int, base, caps>(v ? 1 : 0); }
@@ -255,7 +255,7 @@ namespace strf {
 			template<int base, bool caps> void do_signed_int(long long v) { do_num<long long, base, caps>(v); }
 			template<int base, bool caps> void do_signed_int(unsigned long long v) { do_num<long long, base, caps>(v); }
 			template<int base, bool caps, typename T>
-			void do_unsigned_int(T&& v) {
+			void do_unsigned_int(T&&) {
 				bad("argument is not numeric");
 			}
 			template<int base, bool caps> void do_unsigned_int(bool v) { do_num<unsigned int, base, caps>(v ? 1 : 0); }
@@ -271,7 +271,7 @@ namespace strf {
 			template<int base, bool caps> void do_unsigned_int(long long v) { do_num<unsigned long long, base, caps>(v); }
 			template<int base, bool caps> void do_unsigned_int(unsigned long long v) { do_num<unsigned long long, base, caps>(v); }
 			template<typename T>
-			void do_string(T&& v) {
+			void do_string(T&&) {
 				bad("argument is not a string");
 			}
 			void do_string(char*str) { do_string(str, str ? strlen(str) : 0); }
@@ -285,7 +285,7 @@ namespace strf {
 			template<typename t, typename traits, typename allocator>
 			void do_string(const std::basic_string<t, traits, allocator>&s) { do_string(s.c_str(), s.size()); }
 			template<typename T>
-			void do_pointer(T&& v) {
+			void do_pointer(T&&) {
 				bad("argument is not a pointer");
 			}
 			void do_pointer(void* v) {
@@ -296,7 +296,7 @@ namespace strf {
 				do_pointer((void*)v);
 			}
 			template<typename T>
-			void do_float(T&& v) {
+			void do_float(T&&) {
 				bad("argument is not floating-point");
 			}
 			void do_float(double v) {
@@ -328,7 +328,7 @@ namespace strf {
 				do_float((double)v);
 			}
 			template<typename T>
-			void do_char(T&& v) {
+			void do_char(T&&) {
 				bad("argument is not convertible to a character");
 			}
 			void do_char(char c) {
@@ -427,7 +427,7 @@ namespace strf {
 		};
 
 		template<typename builder_T>
-		void advance(builder_T& b) {
+		void advance(builder_T&) {
 		}
 		template<typename builder_T, typename A1, typename ...Ax>
 		void advance(builder_T& b, A1&& a1, Ax&&... ax) {

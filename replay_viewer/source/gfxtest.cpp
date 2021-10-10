@@ -175,7 +175,7 @@ size_t bytes_allocated = 0;
 void free_memory() {
 	if (!g_m) out_of_memory();
 	size_t n_states = g_m->saved_states.size();
-	printf("n_states is %d\n", n_states);
+	printf("n_states is %lu\n", n_states);
 	if (n_states <= 2) out_of_memory();
 	size_t n;
 	if (n_states >= 300) n = 1 + freemem_rand() % (n_states - 2);
@@ -288,9 +288,6 @@ struct js_file_reader {
 }
 
 main_t* m;
-
-int current_width = -1;
-int current_height = -1;
 
 extern "C" double replay_get_value(int index) {
 	switch (index) {
@@ -600,17 +597,10 @@ int main(int argc, char const* argv[])
 
 	log("v25\n");
 
-	size_t screen_width = 1280;
-	size_t screen_height = 800;
-
 	std::chrono::high_resolution_clock clock;
 	auto start = clock.now();
 
 #ifdef EMSCRIPTEN
-	if (current_width != -1) {
-		screen_width = current_width;
-		screen_height = current_height;
-	}
 	auto load_data_file = data_loading::data_files_directory<data_loading::data_files_loader<data_loading::mpq_file<data_loading::js_file_reader<>>>>("");
 #else
 	auto load_data_file = data_loading::data_files_directory("");

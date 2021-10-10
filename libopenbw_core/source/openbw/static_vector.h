@@ -272,7 +272,7 @@ private:
 		m_end = e;
 	}
 	template<typename VT = value_type, typename std::enable_if<std::is_scalar<VT>::value, int>::type = 0>
-	void m_destroy(pointer p) {}
+	void m_destroy(pointer) {}
 	template<typename VT = value_type, typename std::enable_if<!std::is_scalar<VT>::value, int>::type = 0>
 	void m_destroy(pointer p) {
 		p->~value_type();
@@ -292,7 +292,7 @@ private:
 	const_pointer ptr_end() const {
 		return m_end;
 	}
-	const pointer ptr_cap_end() const {
+	const_pointer ptr_cap_end() const {
 		return (pointer)(m_data.data() + max_elements);
 	}
 public:

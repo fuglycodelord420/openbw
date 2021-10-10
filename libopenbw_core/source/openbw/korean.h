@@ -1817,7 +1817,7 @@ bool korean_locale_to_utf8(const a_string& src, a_string& dst) {
 	size_t est_size = 0;
 	const char* ct = c;
 	for (; ct != e; ++ct) {
-		if (*ct <= 0x7f) ++est_size;
+		if (static_cast<unsigned char>(*ct) <= 0x7f) ++est_size;
 		else {
 			est_size += 2;
 			++ct;

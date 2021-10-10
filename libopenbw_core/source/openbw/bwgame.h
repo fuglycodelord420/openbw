@@ -433,13 +433,13 @@ struct state_functions {
 		}
 	}
 
-	virtual void on_unit_deselect(unit_t* u) {}
+	virtual void on_unit_deselect(unit_t*) {}
 
-	virtual void on_unit_destroy(unit_t* u) {}
-	virtual void on_kill_unit(unit_t* u) {}
+	virtual void on_unit_destroy(unit_t*) {}
+	virtual void on_kill_unit(unit_t*) {}
 
-	virtual void on_player_eliminated(int owner) {}
-	virtual void on_victory_state(int owner, int state) {}
+	virtual void on_player_eliminated([[maybe_unused]] int owner) {}
+	virtual void on_victory_state([[maybe_unused]] int owner, [[maybe_unused]] int state) {}
 
 	virtual ~state_functions() {}
 
@@ -9453,7 +9453,7 @@ struct state_functions {
 	}
 
 	template<typename random_iterator_T, typename compare_T>
-	void binary_heap_up(random_iterator_T element, random_iterator_T begin, random_iterator_T end, compare_T compare) const {
+	void binary_heap_up(random_iterator_T element, random_iterator_T begin, [[maybe_unused]] random_iterator_T end, compare_T compare) const {
 		auto index = element - begin;
 		while (element != begin) {
 			auto parent_index = (index - 1) / 2;
@@ -11253,7 +11253,7 @@ struct state_functions {
 
 	}
 
-	bool movement_UM_CheckIllegal(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_CheckIllegal(unit_t* u, execute_movement_struct&) {
 		u_unset_status_flag(u, unit_t::status_flag_collision);
 		auto check_illegal = [&]() {
 			if (!u_ground_unit(u)) return false;
@@ -11460,7 +11460,7 @@ struct state_functions {
 		}
 	}
 
-	bool movement_UM_Dormant(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_Dormant(unit_t* u, execute_movement_struct&) {
 		bool rest = false;
 		if (u_collision(u) && u_ground_unit(u)) rest = true;
 		if (!unit_is_at_move_target(u)) rest = true;
@@ -11519,13 +11519,13 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_AnotherPath(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_AnotherPath(unit_t* u, execute_movement_struct&) {
 		if (unit_path_to(u, u->move_target.pos, st.consider_collision_with_unit_bug)) u->movement_state = movement_states::UM_FollowPath;
 		else u->movement_state = movement_states::UM_FailedPath;
 		return false;
 	}
 
-	bool movement_UM_StartPath(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_StartPath(unit_t* u, execute_movement_struct&) {
 		if (unit_path_to(u, u->move_target.pos, st.consider_collision_with_unit_bug)) {
 			auto next_movement_state = movement_states::UM_FollowPath;
 			if (u->user_action_flags & 2) {
@@ -11608,14 +11608,14 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_ScoutPath(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_ScoutPath(unit_t* u, execute_movement_struct&) {
 		if (unit_update_path_movement_state(u, true)) return true;
 
 		u->movement_state = movement_states::UM_FollowPath;
 		return true;
 	}
 
-	bool movement_UM_AtMoveTarget(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_AtMoveTarget(unit_t* u, execute_movement_struct&) {
 		if (u->path) {
 			free_path(u->path);
 			u->path = nullptr;
@@ -11629,7 +11629,7 @@ struct state_functions {
 		return true;
 	}
 
-	bool movement_UM_NewMoveTarget(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_NewMoveTarget(unit_t* u, execute_movement_struct&) {
 		u->path->state_flags &= ~1;
 		if (!unit_update_path_movement_state(u, true)) {
 			if (u->path) {
@@ -11641,7 +11641,7 @@ struct state_functions {
 		return true;
 	}
 
-	bool movement_UM_Repath(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_Repath(unit_t* u, execute_movement_struct&) {
 		const unit_t* collision_unit = st.consider_collision_with_unit_bug;
 		if (u->path) {
 			collision_unit = get_unit(u->path->last_collision_unit);
@@ -11654,7 +11654,7 @@ struct state_functions {
 		return true;
 	}
 
-	bool movement_UM_UIOrderDelay(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_UIOrderDelay(unit_t* u, execute_movement_struct&) {
 		if (unit_update_path_movement_state(u, true)) return true;
 		if (u->path->delay == 0) {
 			u->movement_state = movement_states::UM_FollowPath;
@@ -11706,7 +11706,7 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_FailedPath(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_FailedPath(unit_t* u, execute_movement_struct&) {
 		u->pathing_collision_counter = 10;
 		update_unit_pathing_collision(u);
 		u->movement_state = movement_states::UM_RetryPath;
@@ -11747,7 +11747,7 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_TurnAndStart(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_TurnAndStart(unit_t* u, execute_movement_struct&) {
 		const unit_t* collision_unit = st.consider_collision_with_unit_bug;
 		if (u->path) {
 			collision_unit = get_unit(u->path->last_collision_unit);
@@ -11786,7 +11786,7 @@ struct state_functions {
 		}
 	}
 
-	bool movement_UM_RetryPath(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_RetryPath(unit_t* u, execute_movement_struct&) {
 		if (unit_update_path_movement_state(u, false)) return true;
 		if (u->pathing_collision_counter < 20) {
 			++u->pathing_collision_counter;
@@ -11801,13 +11801,13 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_InitSeq(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_InitSeq(unit_t* u, execute_movement_struct&) {
 		if (u_status_flag(u, unit_t::status_flag_iscript_nobrk)) return false;
 		u->movement_state = movement_states::UM_Init;
 		return true;
 	}
 
-	bool movement_UM_ForceMoveFree(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_ForceMoveFree(unit_t* u, execute_movement_struct&) {
 		if (u->pathing_collision_counter < 255) ++u->pathing_collision_counter;
 		if (unit_is_at_move_target(u) || u_movement_flag(u, 4)) {
 			u->movement_state = movement_states::UM_AtMoveTarget;
@@ -11819,7 +11819,7 @@ struct state_functions {
 		return true;
 	}
 
-	bool movement_UM_FixCollision(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_FixCollision(unit_t* u, execute_movement_struct&) {
 		if (unit_update_path_movement_state(u, false)) return true;
 		if (u->pathing_collision_counter < 255) ++u->pathing_collision_counter;
 		const unit_t* collision_unit = get_unit(u->path->last_collision_unit);
@@ -11959,7 +11959,7 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_SlidePrep(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_SlidePrep(unit_t* u, execute_movement_struct&) {
 		if (unit_update_path_movement_state(u, true)) return true;
 		if (u->flingy_movement_type == 0) {
 			if (u->path->last_collision_speed >= fp8::integer(2)) u->path->last_collision_speed /= 2;
@@ -12028,7 +12028,7 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_RepathMovers(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_RepathMovers(unit_t* u, execute_movement_struct&) {
 		free_path(u);
 		auto move_target = u->move_target;
 		if (!unit_path_to(u, move_target.pos, st.consider_collision_with_unit_bug, true) || u_immovable(u)) {
@@ -12063,7 +12063,7 @@ struct state_functions {
 		return false;
 	}
 
-	bool movement_UM_Lump(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_Lump(unit_t*, execute_movement_struct&) {
 		return false;
 	}
 
@@ -12116,7 +12116,7 @@ struct state_functions {
 		}
 	}
 
-	bool movement_UM_Hidden(unit_t* u, execute_movement_struct& ems) {
+	bool movement_UM_Hidden(unit_t*, execute_movement_struct& ems) {
 		ems.refresh_vision = false;
 		return false;
 	}
@@ -13284,7 +13284,7 @@ struct state_functions {
 		return from + ((lcg_rand(source) * (to - from + 1)) >> 15);
 	}
 
-	void local_unit_status_error(unit_t* u, int err) {
+	void local_unit_status_error(unit_t*, [[maybe_unused]] int err) {
 		// todo?
 	}
 
@@ -14299,7 +14299,7 @@ struct state_functions {
 		set_flingy_move_target(b, target);
 	}
 
-	bool bullet_state_init(bullet_t* b, execute_movement_struct& ems) {
+	bool bullet_state_init(bullet_t* b, execute_movement_struct&) {
 		if (~b->order_signal & 1) return false;
 		b->order_signal &= ~1;
 		switch (b->weapon_type->bullet_type) {
@@ -14335,7 +14335,7 @@ struct state_functions {
 		return true;
 	}
 
-	bool bullet_state_dying(bullet_t* b, execute_movement_struct& ems) {
+	bool bullet_state_dying(bullet_t* b, execute_movement_struct&) {
 		if (b->sprite) return false;
 		--st.active_bullets_size;
 		st.active_bullets.remove(*b);
@@ -14408,7 +14408,7 @@ struct state_functions {
 		return false;
 	}
 
-	bool bullet_state_damage_over_time(bullet_t* b, execute_movement_struct& ems) {
+	bool bullet_state_damage_over_time(bullet_t* b, execute_movement_struct&) {
 		if (b->remaining_time-- == 0) {
 			bullet_kill(b);
 		} else {
@@ -14585,7 +14585,7 @@ struct state_functions {
 		return b;
 	}
 
-	xy get_bullet_appear_at_target_pos(const unit_t* u, const unit_t* target) const {
+	xy get_bullet_appear_at_target_pos(const unit_t* u, [[maybe_unused]] const unit_t* target) const {
 		auto target_bb = unit_sprite_inner_bounding_box(u->order_target.unit);
 		int margin_w = (target_bb.to.x - target_bb.from.x) / 4;
 		int margin_h = (target_bb.to.y - target_bb.from.y) / 4;
@@ -16287,6 +16287,7 @@ struct state_functions {
 					destroy_sprite(u->building.pylon.psi_field_sprite);
 					u->building.pylon.psi_field_sprite = nullptr;
 				}
+				break;
 			case UnitTypes::Zerg_Nydus_Canal:
 				if (u->building.nydus.exit) {
 					unit_t* exit = u->building.nydus.exit;
@@ -17426,7 +17427,7 @@ struct state_functions {
 		return u;
 	}
 
-	void display_last_error_for_player(int player) {
+	void display_last_error_for_player([[maybe_unused]]int player) {
 		// todo
 	}
 
@@ -19756,7 +19757,9 @@ struct state_copier {
 		auto* u = r.units_container.get(index, false);
 		if (!unit_copied[index]) {
 			unit_copied[index] = true;
-			memcpy(u, v, sizeof(*v));
+			auto v_bytes = reinterpret_cast<const std::byte*>(v);
+			auto u_bytes = reinterpret_cast<std::byte*>(u);
+			memcpy(u_bytes, v_bytes, sizeof(*v));
 			remap_sprite(u->sprite);
 			remap_unit(u->move_target.unit);
 			remap_unit(u->order_target.unit);
@@ -19811,7 +19814,9 @@ struct state_copier {
 		auto* rv = r.bullets_container.get(index, false);
 		if (!bullet_copied[index]) {
 			bullet_copied[index] = true;
-			memcpy(rv, v, sizeof(*v));
+			auto v_bytes = reinterpret_cast<const std::byte*>(v);
+			auto rv_bytes = reinterpret_cast<std::byte*>(rv);
+			memcpy(rv_bytes, v_bytes, sizeof(*v));
 			remap_sprite(rv->sprite);
 			remap_unit(rv->move_target.unit);
 			remap_unit(rv->bullet_target);
@@ -19826,7 +19831,9 @@ struct state_copier {
 		auto* rv = r.sprites_container.get(index, false);
 		if (!sprite_copied[index]) {
 			sprite_copied[index] = true;
-			memcpy(rv, v, sizeof(*v));
+			auto v_bytes = reinterpret_cast<const std::byte*>(v);
+			auto rv_bytes = reinterpret_cast<std::byte*>(rv);
+			memcpy(rv_bytes, v_bytes, sizeof(*v));
 			remap_image(rv->main_image);
 			assemble(rv->images, v->images, &state_copier::image);
 		}

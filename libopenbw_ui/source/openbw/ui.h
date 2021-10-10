@@ -388,7 +388,7 @@ void draw_frame(const grp_t::frame_t& frame, const uint8_t* texture, uint8_t* ds
 }
 
 struct no_remap {
-	uint8_t operator()(uint8_t new_value, uint8_t old_value) const {
+	uint8_t operator()(uint8_t new_value, [[maybe_unused]] uint8_t old_value) const {
 		return new_value;
 	}
 };
@@ -698,7 +698,7 @@ struct ui_functions: ui_util_functions {
 		set_image_data();
 	}
 
-	virtual void on_action(int owner, int action) override {
+	virtual void on_action(int owner, [[maybe_unused]] int action) override {
 		apm.at(owner).add_action(st.current_frame);
 	}
 
@@ -972,7 +972,7 @@ struct ui_functions: ui_util_functions {
 			color = tileset_img.resource_minimap_color;
 		}
 		auto player_color = [color](uint8_t new_value, uint8_t) {
-			if (new_value >= 0 && new_value < 8) return color;
+			if (new_value < 8) return color;
 			return new_value;
 		};
 		draw_frame(frame, false, dst, data_pitch, offset_x, offset_y, width, height, player_color);
@@ -1235,8 +1235,8 @@ struct ui_functions: ui_util_functions {
 	}
 
 	simple::geom::segment<int2> get_minimap_area() {
-		size_t minimap_width = std::max(game_st.map_tile_width, game_st.map_tile_height);
-		size_t minimap_height = std::max(game_st.map_tile_width, game_st.map_tile_height);
+		int minimap_width = std::max(game_st.map_tile_width, game_st.map_tile_height);
+		int minimap_height = minimap_width;
 		if (game_st.map_width < game_st.map_height) {
 			minimap_width = minimap_width * minimap_width * game_st.map_tile_width / (minimap_height * game_st.map_tile_height);
 		} else if (game_st.map_height < game_st.map_width) {
@@ -1353,7 +1353,7 @@ struct ui_functions: ui_util_functions {
 
 	}
 
-	virtual void draw_callback(uint8_t* data, size_t data_pitch) {
+	virtual void draw_callback([[maybe_unused]] uint8_t* data, [[maybe_unused]] size_t data_pitch) {
 	}
 
 	a_vector<const image_t*> image_draw_queue;
@@ -1369,7 +1369,7 @@ struct ui_functions: ui_util_functions {
 	// a_vector<a_vector<std::unique_ptr<native_window_drawing::surface>>> new_images;
 	// a_vector<a_vector<std::unique_ptr<native_window_drawing::surface>>> new_images_flipped;
 
-	bool is_new_image(const image_t* image) {
+	bool is_new_image([[maybe_unused]] const image_t* image) {
 		return false;
 		// if (!use_new_images) return false;
 		// if (!new_images_index_loaded) {
@@ -1873,9 +1873,9 @@ struct ui_functions: ui_util_functions {
 			}
 		}
 
-		if (view.position.y() + view.size.y() > game_st.map_height) view.position.y() = game_st.map_height - view.size.y();
+		if (view.position.y() + view.size.y() > int(game_st.map_height)) view.position.y() = game_st.map_height - view.size.y();
 		if (view.position.y() < 0) view.position.y() = 0;
-		if (view.position.x() + view.size.x() > game_st.map_width) view.position.x() = game_st.map_width - view.size.x();
+		if (view.position.x() + view.size.x() > int(game_st.map_width)) view.position.x() = game_st.map_width - view.size.x();
 		if (view.position.x() < 0) view.position.x() = 0;
 
 		auto indexed_pixels = std::get<pixel_writer>(indexed_surface.pixels());

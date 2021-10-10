@@ -41,7 +41,7 @@ struct sync_server_asio_tcp: sync_server_asio_socket<asio::ip::tcp::socket> {
 			asio::ip::tcp::resolver::query query(hostname.c_str(), "");
 			using it_t = asio::ip::tcp::resolver::iterator;
 			auto* r = &*resolver;
-			r->async_resolve(query, [this, port, resolver = std::move(resolver)](const boost::system::error_code& ec, it_t iterator) {
+			r->async_resolve(query, [this, port, resolver = std::move(resolver)](const boost::system::error_code&, it_t iterator) {
 				for (;iterator != it_t{}; ++iterator) {
 					bind({iterator->endpoint().address(), (unsigned short)port});
 				}
@@ -69,7 +69,7 @@ struct sync_server_asio_tcp: sync_server_asio_socket<asio::ip::tcp::socket> {
 			asio::ip::tcp::resolver::query query(hostname.c_str(), "");
 			using it_t = asio::ip::tcp::resolver::iterator;
 			auto* r = &*resolver;
-			r->async_resolve(query, [this, port, resolver = std::move(resolver)](const boost::system::error_code& ec, it_t iterator) {
+			r->async_resolve(query, [this, port, resolver = std::move(resolver)](const boost::system::error_code&, it_t iterator) {
 				for (;iterator != it_t{}; ++iterator) {
 					connect({iterator->endpoint().address(), (unsigned short)port});
 				}

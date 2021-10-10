@@ -532,11 +532,13 @@ void decompress(uint8_t* input, size_t input_size, uint8_t* output, size_t outpu
 				case 61: return r.template get_bits<1>() ? 69 : 53;
 				case 62: return 85 + 16 * r.template get_bits<2>();
 				}
+				// fallthrough
 			case 1:
 				switch (r.template get_bits<1>()) {
 				case 1: return 7;
 				case 0: return r.template get_bits<1>() ? 9 : 8;
 				}
+				// fallthrough
 			case 2:
 				switch (r.template get_bits<3>()) {
 				case 1: return 10;
@@ -549,6 +551,7 @@ void decompress(uint8_t* input, size_t input_size, uint8_t* output, size_t outpu
 				case 6: return r.template get_bits<1>() ? 21 : 17;
 				}
 			}
+			// fallthrough
 		case 1: return r.template get_bits<1>() ? 0 : 2;
 		case 2:
 			switch (r.template get_bits<1>()) {
@@ -597,6 +600,7 @@ void decompress(uint8_t* input, size_t input_size, uint8_t* output, size_t outpu
 			case 24: return r.template get_bits<1>() ? 56 : 57;
 			case 28: return r.template get_bits<1>() ? 48 : 49;
 			}
+			// fallthrough
 		case 1:
 			switch (r.template get_bits<2>()) {
 			case 1: return 2;
@@ -604,6 +608,7 @@ void decompress(uint8_t* input, size_t input_size, uint8_t* output, size_t outpu
 			case 0: return r.template get_bits<1>() ? 5 : 6;
 			case 2: return r.template get_bits<1>() ? 3 : 4;
 			}
+			// fallthrough
 		case 2:
 			switch (r.template get_bits<4>()) {
 			case 1: return 14;
@@ -1448,7 +1453,8 @@ unit_types_t load_units_dat(const data_T& data) {
 	unit_types.vec.resize(total_count);
 	for (size_t i = 0; i < total_count; ++i) {
 		auto& v = unit_types.vec[i];
-		memset(&v, 0, sizeof(v));
+		auto v_bytes = reinterpret_cast<std::byte*>(&v);
+		memset(v_bytes, 0, sizeof(v));
 		v.id = (UnitTypes)i;
 	}
 

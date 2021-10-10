@@ -76,15 +76,15 @@ struct sync_state {
 		int local_id = 0;
 		int player_slot = -1;
 		const void* h = nullptr;
-		a_vector<uint8_t> buffer;
+		a_vector<uint8_t> buffer = {};
 		size_t buffer_begin = 0;
 		size_t buffer_end = 0;
-		a_circular_vector<scheduled_action> scheduled_actions;
+		a_circular_vector<scheduled_action> scheduled_actions = {};
 		uint8_t frame = 0;
-		a_string name;
+		a_string name = {};
 		bool game_started = false;
 		bool has_greeted = false;
-		std::chrono::steady_clock::time_point last_synced;
+		std::chrono::steady_clock::time_point last_synced = {};
 	};
 
 	a_list<client_t> clients = {{uid_t::generate(), true}};
@@ -115,17 +115,17 @@ struct sync_state {
 struct sync_server_noop {
 	struct message_t {
 		template<typename T>
-		void put(T v) {}
-		void put(const void* data, size_t size) {}
+		void put(T) {}
+		void put([[maybe_unused]] const void* data, [[maybe_unused]] size_t size) {}
 	};
 	message_t new_message() {return {};}
-	void send_message(const message_t& d, const void* h) {}
-	void allow_send(const void* h, bool allow) {}
-	void kill_client(const void* h) {}
+	void send_message(const message_t&, const void*) {}
+	void allow_send(const void*, [[maybe_unused]] bool allow) {}
+	void kill_client(const void*) {}
 	template<typename F>
-	void set_on_kill(const void* h, F&& f) {}
+	void set_on_kill(const void*, F&&) {}
 	template<typename F>
-	void set_on_message(const void* h, F&& f) {}
+	void set_on_message(const void*, F&&) {}
 	std::chrono::steady_clock::time_point timeout_time;
 	std::function<void()> timeout_function;
 	template<typename duration_T, typename callback_F>
@@ -134,7 +134,7 @@ struct sync_server_noop {
 		timeout_function = std::forward<callback_F>(callback);
 	}
 	template<typename on_new_client_F>
-	void poll(on_new_client_F&& on_new_client) {
+	void poll(on_new_client_F&& ) {
 		if (timeout_function && std::chrono::steady_clock::now() >= timeout_time) {
 			auto f = std::move(timeout_function);
 			timeout_function = nullptr;
@@ -142,7 +142,7 @@ struct sync_server_noop {
 		}
 	}
 	template<typename on_new_client_F>
-	void run_one(on_new_client_F&& on_new_client) {
+	void run_one(on_new_client_F&& ) {
 		if (timeout_function) {
 			while (std::chrono::steady_clock::now() < timeout_time) {
 				std::this_thread::sleep_until(timeout_time);

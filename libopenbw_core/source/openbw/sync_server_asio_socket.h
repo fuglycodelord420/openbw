@@ -124,7 +124,7 @@ struct sync_server_asio_socket {
 
 	struct message_t {
 		sync_server_asio_socket& server;
-		static_vector<message_buffer_handle, 2> buffers;
+		static_vector<message_buffer_handle, 2> buffers = {};
 		size_t total_size = 0;
 		template<typename T>
 		void put(T v) {

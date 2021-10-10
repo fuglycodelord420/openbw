@@ -75,7 +75,7 @@ namespace bwgame
 		ret.blend(s.blend());
 		ret.alpha(s.alpha());
 		ret.color(s.color());
-		return std::move(ret);
+		return ret;
 	}
 
 } // namespace bwgame

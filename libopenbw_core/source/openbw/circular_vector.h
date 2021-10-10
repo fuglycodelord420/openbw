@@ -246,7 +246,7 @@ private:
 		if (n >= n_left) return m_data_begin + (n - n_left);
 		else return i + n;
 	}
-	
+
 	decltype(auto) get_allocator() {
 		return circular_vector_allocator_container<allocator_T, std::is_empty<allocator_T>::value>::get_allocator();
 	}
@@ -357,7 +357,7 @@ private:
 		}
 		return new_data;
 	}
-	
+
 	void m_grow() {
 		size_t cap = capacity();
 		size_t remaining_cap = max_size() - cap;
@@ -379,7 +379,7 @@ private:
 	}
 
 	template<typename... args_T>
-	void m_expand(size_t new_capacity, args_T&&... args) {
+	void m_expand(size_t new_capacity, args_T&&...) {
 		pointer new_data = m_reallocate(new_capacity);
 		pointer new_end = new_data + size();
 		if (m_data_begin) get_allocator().deallocate(m_data_begin, m_data_end - m_data_begin);
@@ -426,7 +426,7 @@ private:
 		}
 		m_end = e;
 	}
-	
+
 	template<typename iterator_T>
 	void m_assign(iterator_T begin, iterator_T end) {
 		size_t new_size = std::distance(begin, end);
