@@ -2,6 +2,27 @@
 
 using namespace bwgame;
 
+constexpr auto tile_size = int2::one(32);
+
+void build_addon(const user_input_handler& self, UnitTypes addon_id)
+{
+	unit_t* u = self.actions.get_single_selected_unit(self.owner);
+	const unit_type_t* addon = self.actions.get_unit_type(addon_id);
+	if(u && addon)
+	{
+		auto position = to_int2(u->position) ;
+		position -= to_int2(u->unit_type->placement_size) / 2;
+		position += to_int2(addon->addon_position);
+
+		self.actions.execute_action(self.owner, std::tuple(
+			bwgame::action_data::build{},
+			self.actions.get_order_type(Orders::PlaceAddon),
+			action_data::tile_vector(position / tile_size),
+			addon
+		));
+	}
+}
+
 user_input_handler::user_input_handler
 (
 	simple::graphical::window& wnd,
@@ -19,6 +40,7 @@ user_input_handler::user_input_handler
 {
 	assert(owner >= 0 && owner < 8);
 	actions.sound_owner = owner;
+	std::cout << "user input enabled for player " << owner << '\n';
 }
 
 void user_input_handler::handle_event(const simple::interactive::event& e)
@@ -59,14 +81,62 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 				bwgame::action_data::train{},
 				actions.get_unit_type(UnitTypes::Terran_Marine)
 			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Terran_Siege_Tank_Tank_Mode)
+			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::research{},
+				actions.get_tech_type(TechTypes::Stim_Packs)
+			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::research{},
+				actions.get_tech_type(TechTypes::Tank_Siege_Mode)
+			));
+			actions.execute_action(owner, std::tuple{
+				bwgame::action_data::stim_pack{}
+			});
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::siege{},
+				false
+			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::unsiege{},
+				false
+			));
 			if(build_mode)
 				building = actions.get_unit_type(UnitTypes::Terran_Supply_Depot);
+		break;
+
+		case scancode::v:
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Terran_Vulture)
+			));
+		break;
+
+		case scancode::w:
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::upgrade{},
+				actions.get_upgrade_type(UpgradeTypes::Terran_Vehicle_Weapons)
+			));
+		break;
+
+		case scancode::i:
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::upgrade{},
+				actions.get_upgrade_type(UpgradeTypes::Ion_Thrusters)
+			));
 		break;
 
 		case scancode::p:
 			actions.execute_action(owner, std::tuple(
 				bwgame::action_data::train{},
 				actions.get_unit_type(UnitTypes::Protoss_Probe)
+			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::upgrade{},
+				actions.get_upgrade_type(UpgradeTypes::Terran_Vehicle_Plating)
 			));
 			if(build_mode)
 				building = actions.get_unit_type(UnitTypes::Protoss_Pylon);
@@ -80,6 +150,10 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 		break;
 
 		case scancode::g:
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::train{},
+				actions.get_unit_type(UnitTypes::Terran_Goliath)
+			));
 			if(build_mode)
 				building = actions.get_unit_type(UnitTypes::Protoss_Gateway);
 		break;
@@ -89,6 +163,19 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 				bwgame::action_data::train{},
 				actions.get_unit_type(UnitTypes::Terran_Medic)
 			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::research{},
+				actions.get_tech_type(TechTypes::Spider_Mines)
+			));
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::order{},
+				action_data::position_vector{simple::interactive::last_mouse_state().position + view.position},
+				(unit_t*) nullptr,
+				(unit_type_t*) nullptr,
+				actions.get_order_type(Orders::PlaceMine),
+				false
+			));
+			build_addon(*this, UnitTypes::Terran_Machine_Shop);
 			if(build_mode)
 				building = actions.get_unit_type(UnitTypes::Terran_Missile_Turret);
 		break;
@@ -98,6 +185,8 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 				bwgame::action_data::train{},
 				actions.get_unit_type(UnitTypes::Terran_Firebat)
 			));
+			if(build_mode)
+				building = actions.get_unit_type(UnitTypes::Terran_Factory);
 		break;
 
 		case scancode::a:
@@ -117,9 +206,21 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 					default:;
 				}
 			}
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::order{},
+				action_data::position_vector{simple::interactive::last_mouse_state().position + view.position},
+				(unit_t*) nullptr,
+				(unit_type_t*) nullptr,
+				actions.get_order_type(Orders::AttackMove),
+				false
+			));
 		break;
 
 		case scancode::u:
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::upgrade{},
+				actions.get_upgrade_type(UpgradeTypes::U_238_Shells)
+			));
 			if(build_mode)
 				building = actions.get_unit_type(UnitTypes::Terran_Bunker);
 		break;
@@ -146,6 +247,10 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 					default:;
 				}
 			}
+			actions.execute_action(owner, std::tuple(
+				bwgame::action_data::upgrade{},
+				actions.get_upgrade_type(UpgradeTypes::Charon_Boosters)
+			));
 		break;
 
 		case scancode::r:
@@ -179,7 +284,7 @@ void user_input_handler::key_up(const simple::interactive::key_released& key)
 	}
 }
 
-bool user_input_handler::left_click(const simple::interactive::mouse_down& mouse)
+bool user_input_handler::left_click(const simple::interactive::mouse_down&)
 {
 	if(building)
 	{
@@ -280,7 +385,6 @@ void user_input_handler::select(range2 region, bool double_clicked)
 	else
 	{
 		a_vector<unit_t*> new_units;
-		bool any_non_neutrals = false;
 		for (unit_t* u : actions.find_units(to_rect(region + view.position)))
 		{
 			if (actions.unit_can_be_selected(u) && is_visible(*u))
@@ -291,7 +395,7 @@ void user_input_handler::select(range2 region, bool double_clicked)
 		std::sort
 		(
 			selection_buffer.begin(), selection_buffer.end(),
-			[this, &corner](auto& a, auto& b)
+			[this, &corner, &neutral_owner](auto& a, auto& b)
 			{
 				// first partition by owners
 				if(a->owner != b->owner)
@@ -379,7 +483,6 @@ void user_input_handler::draw(pixel_writer_rgba pixels)
 
 	// draw building placement box
 	{
-		constexpr auto tile_size = int2::one(32);
 
 		if(building)
 		{
