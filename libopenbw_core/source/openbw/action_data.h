@@ -14,6 +14,10 @@
 #include <array>
 #include <cassert>
 
+#ifndef NDEBUG
+#include <iostream>
+#endif
+
 namespace bwgame::action_data
 {
 
@@ -296,15 +300,15 @@ namespace bwgame::action_data
 	}
 
 	template <typename Reader, typename Params>
-	bool read(Reader&& reader, state& st, Params&& params)
+	size_t read(Reader&& reader, state& st, Params&& params)
 	{
 		using namespace simple::support;
 		using params_t = std::remove_reference_t<Params>;
 		if constexpr(std::tuple_size_v<params_t> == 0)
-			return true;
+			return 0;
 		else
 		{
-			if(not get(reader, st, tuple_car(params))) return false;
+			if(not get(reader, st, tuple_car(params))) return std::tuple_size_v<params_t>;
 			return read(reader, st, tuple_tie_cdr(params));
 		}
 		return false;
@@ -346,9 +350,18 @@ namespace bwgame::action_data
 			if(id != Action::id) return std::nullopt;
 
 			func_params result;
-			return action_data::read(r,st,result)
-				? std::optional(result)
-				: std::nullopt;
+			auto failed_count = action_data::read(r,st,result);
+			if(failed_count == 0)
+			{
+				return std::optional(result);
+			}
+			else
+			{
+#ifndef NDEBUG
+				std::cerr << "parsing action data failed at parameter " << std::tuple_size_v<func_params> - failed_count << '\n';
+#endif
+				return std::nullopt;
+			}
 		}
 
 	};
@@ -727,6 +740,7 @@ namespace bwgame::action_data
 		research, cancel_research,
 		upgrade, cancel_upgrade,
 		cancel_addon,
+		stim_pack,
 		player_leave,
 		ping_minimap,
 		chat,
